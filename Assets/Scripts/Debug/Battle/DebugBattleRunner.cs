@@ -27,6 +27,11 @@ namespace FrontierBastion.Client.DebugBattle
         private bool _isPaused;
         private float _tickAccumulator;
 
+        // Selection cursors: index into InitialState.Slots[] and Config.Lanes[] respectively.
+        // Reset to 0 on every scenario load so selection is always valid.
+        private int _selectedSlotCursor;
+        private int _selectedLaneCursor;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void AutoCreateInDebugBuilds()
         {
@@ -69,7 +74,7 @@ namespace FrontierBastion.Client.DebugBattle
 
         private void OnGUI()
         {
-            GUILayout.BeginArea(new Rect(12, 12, 560, 640), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(12, 12, 560, 700), GUI.skin.box);
             GUILayout.Label(BuildStatusText());
             GUILayout.EndArea();
         }
@@ -89,7 +94,7 @@ namespace FrontierBastion.Client.DebugBattle
                 Vector3 start = new Vector3(-5f, y, 0f);
                 Vector3 end = new Vector3(5f, y, 0f);
 
-                Gizmos.color = Color.gray;
+                Gizmos.color = lane.LaneId == SelectedLaneId ? Color.yellow : Color.gray;
                 Gizmos.DrawLine(start, end);
                 Gizmos.DrawWireCube(start, Vector3.one * 0.2f);
                 Gizmos.DrawWireCube(end, Vector3.one * 0.2f);
@@ -112,6 +117,7 @@ namespace FrontierBastion.Client.DebugBattle
                 return;
             }
 
+            // ── Scenario selection ──────────────────────────────────────────
             if (keyboard.f1Key.wasPressedThisFrame)
             {
                 ResetToScenario(DebugBattleScenarioFactory.CreateSmokePlayerVictory(), paused: false);
@@ -127,11 +133,17 @@ namespace FrontierBastion.Client.DebugBattle
                 ResetToScenario(DebugBattleScenarioFactory.CreateInteractiveSandbox(), paused: true);
             }
 
+            if (keyboard.f4Key.wasPressedThisFrame)
+            {
+                ResetToScenario(DebugBattleScenarioFactory.CreateSmokeTimeoutDefeat(), paused: false);
+            }
+
             if (keyboard.backspaceKey.wasPressedThisFrame)
             {
                 ResetToScenario(_scenario ?? DebugBattleScenarioFactory.CreateSmokePlayerVictory(), paused: true);
             }
 
+            // ── Tick controls ───────────────────────────────────────────────
             if (keyboard.spaceKey.wasPressedThisFrame)
             {
                 _isPaused = !_isPaused;
@@ -143,51 +155,101 @@ namespace FrontierBastion.Client.DebugBattle
                 RunOneTick();
             }
 
+            // ── Slot / Lane selection ───────────────────────────────────────
+            if (keyboard.qKey.wasPressedThisFrame)
+            {
+                CycleSlot(-1);
+            }
+
+            if (keyboard.eKey.wasPressedThisFrame)
+            {
+                CycleSlot(+1);
+            }
+
+            if (keyboard.zKey.wasPressedThisFrame)
+            {
+                CycleLane(-1);
+            }
+
+            if (keyboard.xKey.wasPressedThisFrame)
+            {
+                CycleLane(+1);
+            }
+
             if (_simulator == null || _simulator.IsTerminated)
             {
                 return;
             }
 
+            // ── Battle commands (use selected slot/lane) ────────────────────
             if (keyboard.digit1Key.wasPressedThisFrame)
             {
-                SlotState slot1 = FindLastSlotState(0);
-                if (slot1 != null && slot1.DroneCooldownTick > 0)
-                    AddEvent("SpawnDrone rejected: slot 0 cooldown (" + slot1.DroneCooldownTick + " ticks)");
-                else if (slot1 != null && slot1.IsPilotDeployed)
-                    AddEvent("SpawnDrone rejected: slot 0 pilot deployed");
-                else if (_lastState != null && _scenario != null && _lastState.PlayerEnergy < FindSlotEnergyCost(0))
-                    AddEvent("SpawnDrone rejected: energy " + _lastState.PlayerEnergy + " < " + FindSlotEnergyCost(0));
+                int slotIdx = SelectedSlotIndex;
+                string laneId = SelectedLaneId;
+
+                if (!SlotExistsInScenario(slotIdx))
+                {
+                    AddEvent("SpawnDrone rejected: slot " + slotIdx + " not in scenario");
+                }
+                else if (!LaneExistsInConfig(laneId))
+                {
+                    AddEvent("SpawnDrone rejected: lane '" + laneId + "' not in scenario");
+                }
                 else
-                    TrySubmit(BattleCommand.SpawnDroneSquad(
-                        _simulator.CurrentTick,
-                        slotIndex: 0,
-                        laneId: DebugBattleScenarioFactory.LaneGround));
+                {
+                    SlotState slot1 = FindLastSlotState(slotIdx);
+                    if (slot1 != null && slot1.DroneCooldownTick > 0)
+                        AddEvent("SpawnDrone rejected: slot " + slotIdx + " cooldown (" + slot1.DroneCooldownTick + " ticks)");
+                    else if (slot1 != null && slot1.IsPilotDeployed)
+                        AddEvent("SpawnDrone rejected: slot " + slotIdx + " pilot deployed");
+                    else if (_lastState != null && _lastState.PlayerEnergy < FindSlotEnergyCost(slotIdx))
+                        AddEvent("SpawnDrone rejected: energy " + _lastState.PlayerEnergy + " < " + FindSlotEnergyCost(slotIdx));
+                    else
+                        TrySubmit(BattleCommand.SpawnDroneSquad(_simulator.CurrentTick, slotIdx, laneId));
+                }
             }
 
             if (keyboard.digit2Key.wasPressedThisFrame)
             {
-                SlotState slot2 = FindLastSlotState(0);
-                if (slot2 != null && slot2.IsPilotDeployed)
-                    AddEvent("DeployPilot rejected: slot 0 pilot already deployed");
-                else if (slot2 != null && slot2.IsPilotKnockedOut)
-                    AddEvent("DeployPilot rejected: slot 0 pilot KO");
+                int slotIdx = SelectedSlotIndex;
+                string laneId = SelectedLaneId;
+
+                if (!SlotExistsInScenario(slotIdx))
+                {
+                    AddEvent("DeployPilot rejected: slot " + slotIdx + " not in scenario");
+                }
+                else if (!LaneExistsInConfig(laneId))
+                {
+                    AddEvent("DeployPilot rejected: lane '" + laneId + "' not in scenario");
+                }
                 else
-                    TrySubmit(BattleCommand.DeployPilot(
-                        _simulator.CurrentTick,
-                        slotIndex: 0,
-                        laneId: DebugBattleScenarioFactory.LaneGround));
+                {
+                    SlotState slot2 = FindLastSlotState(slotIdx);
+                    if (slot2 != null && slot2.IsPilotDeployed)
+                        AddEvent("DeployPilot rejected: slot " + slotIdx + " pilot already deployed");
+                    else if (slot2 != null && slot2.IsPilotKnockedOut)
+                        AddEvent("DeployPilot rejected: slot " + slotIdx + " pilot KO");
+                    else
+                        TrySubmit(BattleCommand.DeployPilot(_simulator.CurrentTick, slotIdx, laneId));
+                }
             }
 
             if (keyboard.rKey.wasPressedThisFrame)
             {
-                SlotState slotR = FindLastSlotState(0);
-                if (slotR != null && !slotR.IsPilotDeployed)
-                    AddEvent("RecallPilot rejected: slot 0 pilot not deployed");
+                int slotIdx = SelectedSlotIndex;
+
+                if (!SlotExistsInScenario(slotIdx))
+                {
+                    AddEvent("RecallPilot rejected: slot " + slotIdx + " not in scenario");
+                }
                 else
-                    TrySubmit(BattleCommand.RecallPilot(
-                        _simulator.CurrentTick,
-                        slotIndex: 0,
-                        laneId: string.Empty));
+                {
+                    SlotState slotR = FindLastSlotState(slotIdx);
+                    if (slotR != null && !slotR.IsPilotDeployed)
+                        AddEvent("RecallPilot rejected: slot " + slotIdx + " pilot not deployed");
+                    else
+                        TrySubmit(BattleCommand.RecallPilot(_simulator.CurrentTick, slotIdx, string.Empty));
+                }
             }
         }
 
@@ -199,6 +261,8 @@ namespace FrontierBastion.Client.DebugBattle
             _result = null;
             _isPaused = paused;
             _tickAccumulator = 0f;
+            _selectedSlotCursor = 0;
+            _selectedLaneCursor = 0;
             _eventLines.Clear();
             AddEvent("Loaded " + scenario.DisplayName + (paused ? " (paused)" : ""));
         }
@@ -263,8 +327,19 @@ namespace FrontierBastion.Client.DebugBattle
             _guiBuilder.AppendLine("Frontier Bastion - Debug Battle Runner");
             _guiBuilder.AppendLine("Scenario: " + (_scenario != null ? _scenario.DisplayName : "<none>"));
             _guiBuilder.AppendLine("Tick loop: 20 TPS / 1 tick = 0.05s / " + (_isPaused ? "Paused" : "Running"));
-            _guiBuilder.AppendLine("Controls: F1 victory fixture, F2 defeat fixture, F3 interactive, Backspace reset");
-            _guiBuilder.AppendLine("Controls: Alpha1 spawn drone, Alpha2 deploy pilot, R recall, Space pause, T step");
+            _guiBuilder.AppendLine("Controls: F1 victory, F2 defeat, F3 interactive, F4 timeout, Backspace reset");
+            _guiBuilder.AppendLine("Controls: Space pause, T step");
+            _guiBuilder.AppendLine("Controls: Q/E cycle slot, Z/X cycle lane");
+            _guiBuilder.AppendLine("Controls: 1 spawn drone, 2 deploy pilot, R recall  [uses selected slot/lane]");
+            _guiBuilder.AppendLine();
+
+            // Selected slot / lane summary
+            int slotCount = _scenario?.InitialState?.Slots?.Length ?? 0;
+            int laneCount = _scenario?.Config?.Lanes?.Length ?? 0;
+            _guiBuilder.AppendLine("Selected: slot=" + SelectedSlotIndex
+                + " [" + (_selectedSlotCursor + 1) + "/" + slotCount + "]"
+                + "  lane=" + SelectedLaneId
+                + " [" + (_selectedLaneCursor + 1) + "/" + laneCount + "]");
             _guiBuilder.AppendLine();
 
             if (_lastState != null)
@@ -279,6 +354,7 @@ namespace FrontierBastion.Client.DebugBattle
                 {
                     SlotState slot = _lastState.Slots[i];
                     _guiBuilder.AppendLine("Slot " + slot.SlotIndex
+                        + (slot.SlotIndex == SelectedSlotIndex ? " [SEL]" : "")
                         + " drone_cd=" + slot.DroneCooldownTick
                         + " pilot_cd=" + slot.PilotCooldownTick
                         + " pilot_deployed=" + slot.IsPilotDeployed
@@ -288,7 +364,9 @@ namespace FrontierBastion.Client.DebugBattle
                 for (int i = 0; i < _lastState.Lanes.Count; i++)
                 {
                     LaneState lane = _lastState.Lanes[i];
-                    _guiBuilder.AppendLine("Lane " + lane.LaneId + " entities=" + lane.Entities.Count);
+                    _guiBuilder.AppendLine("Lane " + lane.LaneId
+                        + (lane.LaneId == SelectedLaneId ? " [SEL]" : "")
+                        + " entities=" + lane.Entities.Count);
                     for (int j = 0; j < lane.Entities.Count; j++)
                     {
                         BattleEntity entity = lane.Entities[j];
@@ -315,6 +393,86 @@ namespace FrontierBastion.Client.DebugBattle
 
             return _guiBuilder.ToString();
         }
+
+        // ------------------------------------------------------------------ selection
+
+        /// <summary>
+        /// SlotIndex of the currently selected slot, derived from <see cref="_selectedSlotCursor"/>.
+        /// Returns 0 if no slots are available.
+        /// </summary>
+        private int SelectedSlotIndex
+        {
+            get
+            {
+                if (_scenario?.InitialState?.Slots == null || _scenario.InitialState.Slots.Length == 0)
+                    return 0;
+                int cursor = Mathf.Clamp(_selectedSlotCursor, 0, _scenario.InitialState.Slots.Length - 1);
+                return _scenario.InitialState.Slots[cursor].SlotIndex;
+            }
+        }
+
+        /// <summary>
+        /// LaneId of the currently selected lane, derived from <see cref="_selectedLaneCursor"/>.
+        /// Returns empty string if no lanes are available.
+        /// </summary>
+        private string SelectedLaneId
+        {
+            get
+            {
+                if (_scenario?.Config?.Lanes == null || _scenario.Config.Lanes.Length == 0)
+                    return string.Empty;
+                int cursor = Mathf.Clamp(_selectedLaneCursor, 0, _scenario.Config.Lanes.Length - 1);
+                return _scenario.Config.Lanes[cursor].LaneId;
+            }
+        }
+
+        private void CycleSlot(int direction)
+        {
+            if (_scenario?.InitialState?.Slots == null || _scenario.InitialState.Slots.Length == 0)
+            {
+                AddEvent("CycleSlot: no slots in scenario");
+                return;
+            }
+            int count = _scenario.InitialState.Slots.Length;
+            _selectedSlotCursor = (_selectedSlotCursor + direction + count) % count;
+            AddEvent("Selected slot " + SelectedSlotIndex
+                + " (" + (_selectedSlotCursor + 1) + "/" + count + ")");
+        }
+
+        private void CycleLane(int direction)
+        {
+            if (_scenario?.Config?.Lanes == null || _scenario.Config.Lanes.Length == 0)
+            {
+                AddEvent("CycleLane: no lanes in scenario");
+                return;
+            }
+            int count = _scenario.Config.Lanes.Length;
+            _selectedLaneCursor = (_selectedLaneCursor + direction + count) % count;
+            AddEvent("Selected lane " + SelectedLaneId
+                + " (" + (_selectedLaneCursor + 1) + "/" + count + ")");
+        }
+
+        // ------------------------------------------------------------------ validation
+
+        private bool SlotExistsInScenario(int slotIndex)
+        {
+            if (_scenario?.InitialState?.Slots == null)
+                return false;
+            foreach (SlotDefinition def in _scenario.InitialState.Slots)
+                if (def.SlotIndex == slotIndex) return true;
+            return false;
+        }
+
+        private bool LaneExistsInConfig(string laneId)
+        {
+            if (string.IsNullOrEmpty(laneId) || _scenario?.Config?.Lanes == null)
+                return false;
+            foreach (LaneDefinition lane in _scenario.Config.Lanes)
+                if (lane.LaneId == laneId) return true;
+            return false;
+        }
+
+        // ------------------------------------------------------------------ helpers
 
         private long GetLaneLength(string laneId)
         {
