@@ -77,6 +77,7 @@ namespace FrontierBastion.Client.DebugBattle
             GUILayout.BeginArea(new Rect(12, 12, 560, 700), GUI.skin.box);
             GUILayout.Label(BuildStatusText());
             GUILayout.EndArea();
+            DebugBattleStageView.Draw(_scenario, _lastState, SelectedLaneId);
         }
 
         private void OnDrawGizmos()
