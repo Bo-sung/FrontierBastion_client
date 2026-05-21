@@ -14,14 +14,17 @@ namespace FrontierBastion.Client.DebugBattle
     /// Phase 1 — lane lines, base pillars, base HP bars.
     /// Phase 2 — entity markers on each lane, position-mapped from PositionMilli,
     ///            player side = cyan, enemy side = orange, HP integer shown above each marker.
+    /// Phase 2r — improved marker readability: type label (P#/E#) inside marker,
+    ///             separate player/enemy counters, legend row at panel bottom.
     ///
     /// Layout (screen-space, absolute coordinates):
     ///   x=584  right of the 560-wide status panel
-    ///   Title row / Lane area (N × LaneSpacing tall) / HP area
+    ///   Title row / Lane area (N × LaneSpacing tall) / HP area / Legend row
     ///   Player base = blue pillar on left edge of lane area.
     ///   Enemy  base = red  pillar on right edge of lane area.
     ///   Lane lines connect the two pillars; selected lane is yellow.
     ///   Entity markers sit on each lane line, mapped via PositionMilli / LaneLengthMilli.
+    ///   Each marker shows P# (player) or E# (enemy) where # is display order in the lane.
     /// </summary>
     internal static class DebugBattleStageView
     {
@@ -37,15 +40,20 @@ namespace FrontierBastion.Client.DebugBattle
         private const float HpAreaH     = 38f;    // height reserved below lanes for HP bars
         private const float HpBarH      = 8f;
 
-        // ── Entity marker dimensions (Phase 2) ───────────────────────────────
-        private const float MarkerW     = 12f;
-        private const float MarkerH     = 12f;
+        // ── Entity marker dimensions (Phase 2 / 2r) ─────────────────────────
+        /// <summary>Marker width — widened to 18 px so "P1"/"E2" label fits inside.</summary>
+        private const float MarkerW     = 18f;
+        /// <summary>Marker height — 16 px for readable two-character label.</summary>
+        private const float MarkerH     = 16f;
         /// <summary>
         /// Vertical distance (px) between stacked entity markers on the same lane.
+        /// Step matches MarkerH + 2 so successive markers don't overlap.
         /// Entities are stacked downward from the lane centre so they don't overlap
         /// with the lane label drawn above the line.
         /// </summary>
-        private const float MarkerStackStep = 14f;
+        private const float MarkerStackStep = 18f;
+        /// <summary>Height of the legend row at the bottom of the panel.</summary>
+        private const float LegendH     = 16f;
 
         // ── 1×1 colour textures (lazy-init, recreated on domain reload) ──────
         // Phase 1
@@ -102,7 +110,7 @@ namespace FrontierBastion.Client.DebugBattle
 
             float panelW    = Mathf.Min(PanelWidth, Screen.width - PanelX - 4f);
             float laneAreaH = laneCount * LaneSpacing;
-            float panelH    = TitleRowH + laneAreaH + HpAreaH;
+            float panelH    = TitleRowH + laneAreaH + HpAreaH + LegendH;
 
             Color origColor = GUI.color;
 
@@ -183,34 +191,41 @@ namespace FrontierBastion.Client.DebugBattle
                 DrawHpBar(new Rect(enemyPillarX - 20f, barY, barW, HpBarH), eRatio, TRed, TGray);
             }
 
+            // ── Legend row (below HP area) ────────────────────────────────────
+            // Explains the P#/E# marker convention without claiming gameplay meaning.
+            float legendY = hpTop + HpAreaH;
+            GUI.color = new Color(0.45f, 0.45f, 0.45f);
+            GUI.Label(new Rect(PanelX + PadH, legendY + 1f, panelW - PadH * 2f, LegendH - 2f),
+                "P=player  E=enemy  # = display order in lane");
+
             GUI.color = origColor;
         }
 
-        // ── Phase 2: Entity marker rendering ────────────────────────────────
+        // ── Phase 2 / 2r: Entity marker rendering ───────────────────────────
 
         /// <summary>
-        /// Draws entity markers for one lane.
+        /// Draws entity markers for one lane (Phase 2r — improved readability).
         ///
-        /// Colour:
-        ///   Player-side (drone or pilot) → cyan.
-        ///   Enemy-side                   → orange.
-        ///   (The public BattleEntity API does not distinguish drone from pilot;
-        ///    SlotIndex lives only in the private RuntimeEntity inside BattleSimulator.)
+        /// Label convention:
+        ///   Player-side entities → "P1", "P2", … (cyan background, dark label text).
+        ///   Enemy-side  entities → "E1", "E2", … (orange background, dark label text).
+        ///   Player and enemy counters are independent; # is display order only — it
+        ///   carries no gameplay meaning (drone vs. pilot cannot be distinguished from
+        ///   the public BattleEntity API; SlotIndex is private to BattleSimulator).
         ///
         /// Position mapping:
         ///   t = Clamp01(entity.PositionMilli / laneLength)
         ///   screenX = Lerp(lineX0, lineX1, t)
-        ///   t=0 → player base edge, t=1 → enemy base edge.
+        ///   t=0 → player base edge (spawn point), t=1 → enemy base edge.
         ///
         /// Vertical stacking:
-        ///   Index j (0-based) within the lane's entity list.
-        ///   Stacked downward from the lane centre in steps of MarkerStackStep,
-        ///   so they don't overlap the lane label drawn above the line.
-        ///   j=0 → centred on lane line, j=1 → 14 px below, j=2 → 28 px below, …
+        ///   j (0-based, overall entity index in lane list) drives the downward offset.
+        ///   j=0 sits on the lane centre line; j=1,2,… step down by MarkerStackStep (18 px).
+        ///   Stacking is downward so markers stay clear of the lane label above the line.
         ///
         /// HP display:
-        ///   Integer part of Fp HP shown as a label above each marker.
-        ///   Computed as entity.Hp.Raw / Fp.Scale to avoid needing a cast operator.
+        ///   Integer HP shown above each marker in matching tinted text.
+        ///   Computed as entity.Hp.Raw / Fp.Scale (no cast operator required).
         /// </summary>
         private static void DrawLaneEntities(
             IReadOnlyList<BattleEntity> entities,
@@ -221,35 +236,47 @@ namespace FrontierBastion.Client.DebugBattle
         {
             if (entities == null || entities.Count == 0) return;
 
+            // Separate counters so P# and E# are each numbered from 1.
+            int playerCount = 0;
+            int enemyCount  = 0;
+
             for (int j = 0; j < entities.Count; j++)
             {
                 BattleEntity entity = entities[j];
 
-                // ── Position mapping ──────────────────────────────────────────
-                float t = laneLength > 0L
+                // ── Position → screen X ───────────────────────────────────────
+                float t  = laneLength > 0L
                     ? Mathf.Clamp01((float)entity.PositionMilli / (float)laneLength)
                     : 0f;
                 float cx = Mathf.Lerp(lineX0, lineX1, t);
 
                 // ── Vertical stagger (downward from lane centre) ──────────────
-                // j=0: centred on lane line; j=1,2,…: step below.
-                // Keeps markers away from the lane label drawn above the line.
+                // j=0 sits on the lane line; j=1,2,… step down by MarkerStackStep.
                 float my = centreY - MarkerH * 0.5f + j * MarkerStackStep;
                 float mx = cx - MarkerW * 0.5f;
 
-                // ── Coloured square marker ────────────────────────────────────
-                Texture2D markerTex = entity.OwnerSide == OwnerSide.Player ? TCyan : TOrange;
-                GUI.color = Color.white;
-                GUI.DrawTexture(new Rect(mx, my, MarkerW, MarkerH), markerTex);
+                // ── Type label: P# for player side, E# for enemy side ─────────
+                bool   isPlayer  = entity.OwnerSide == OwnerSide.Player;
+                int    typeIndex = isPlayer ? ++playerCount : ++enemyCount;
+                string typeLabel = (isPlayer ? "P" : "E") + typeIndex;
 
-                // ── HP integer label above each marker ────────────────────────
-                // hp.Raw / Fp.Scale gives the integer part (Fp.Scale == 10000).
+                // ── Coloured background (18 × 16 px) ─────────────────────────
+                GUI.color = Color.white;
+                GUI.DrawTexture(new Rect(mx, my, MarkerW, MarkerH),
+                    isPlayer ? TCyan : TOrange);
+
+                // ── Label inside marker — near-black for contrast on bright bg ─
+                GUI.color = new Color(0.05f, 0.05f, 0.05f);
+                GUI.Label(new Rect(mx, my, MarkerW, MarkerH), typeLabel);
+
+                // ── HP integer above the marker (colour-tinted, separate row) ──
+                // Drawn above the marker so it never overlaps the type label.
                 long   hpInt = entity.Hp.Raw >= 0L ? entity.Hp.Raw / Fp.Scale : 0L;
                 string hpStr = hpInt.ToString();
-                GUI.color = entity.OwnerSide == OwnerSide.Player
-                    ? new Color(0.70f, 1.00f, 1.00f)   // light cyan text
-                    : new Color(1.00f, 0.85f, 0.60f);  // light orange text
-                GUI.Label(new Rect(cx - 13f, my - 13f, 26f, 13f), hpStr);
+                GUI.color = isPlayer
+                    ? new Color(0.70f, 1.00f, 1.00f)   // light cyan
+                    : new Color(1.00f, 0.85f, 0.60f);  // light orange
+                GUI.Label(new Rect(cx - 15f, my - 14f, 30f, 13f), hpStr);
             }
 
             GUI.color = Color.white;
