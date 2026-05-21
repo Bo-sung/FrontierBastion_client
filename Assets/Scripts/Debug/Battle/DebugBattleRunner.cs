@@ -32,6 +32,9 @@ namespace FrontierBastion.Client.DebugBattle
         private int _selectedSlotCursor;
         private int _selectedLaneCursor;
 
+        // World-space SpriteRenderer view — created at runtime, runs alongside IMGUI view.
+        private DebugBattleWorldView _worldView;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void AutoCreateInDebugBuilds()
         {
@@ -52,6 +55,7 @@ namespace FrontierBastion.Client.DebugBattle
 
         private void Awake()
         {
+            _worldView = DebugBattleWorldView.GetOrCreate(gameObject);
             ResetToScenario(DebugBattleScenarioFactory.CreateSmokePlayerVictory(), paused: false);
         }
 
@@ -70,6 +74,13 @@ namespace FrontierBastion.Client.DebugBattle
                 RunOneTick();
                 _tickAccumulator -= TickSeconds;
             }
+        }
+
+        private void LateUpdate()
+        {
+            // Refresh world-space SpriteRenderer view every frame after tick processing.
+            if (_worldView != null)
+                _worldView.Render(_scenario, _lastState, SelectedLaneId);
         }
 
         private void OnGUI()
