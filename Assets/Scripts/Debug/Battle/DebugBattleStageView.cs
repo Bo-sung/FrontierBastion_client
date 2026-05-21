@@ -184,10 +184,10 @@ namespace FrontierBastion.Client.DebugBattle
                 float barY = hpTop + 18f;
                 float barW = BaseW + 20f;
 
-                float pRatio = HpRatio(lastState.PlayerBaseHp, scenario.Config.PlayerBaseInitialHp);
+                float pRatio = HpRatio(GetSideBaseHp(lastState, BattleSide.SideA), scenario.Config.SideA.BaseInitialHp);
                 DrawHpBar(new Rect(playerPillarX, barY, barW, HpBarH), pRatio, TBlue, TGray);
 
-                float eRatio = HpRatio(lastState.EnemyBaseHp, scenario.Config.EnemyBaseInitialHp);
+                float eRatio = HpRatio(GetSideBaseHp(lastState, BattleSide.SideB), scenario.Config.SideB.BaseInitialHp);
                 DrawHpBar(new Rect(enemyPillarX - 20f, barY, barW, HpBarH), eRatio, TRed, TGray);
             }
 
@@ -255,8 +255,8 @@ namespace FrontierBastion.Client.DebugBattle
                 float my = centreY - MarkerH * 0.5f + j * MarkerStackStep;
                 float mx = cx - MarkerW * 0.5f;
 
-                // ── Type label: P# for player side, E# for enemy side ─────────
-                bool   isPlayer  = entity.OwnerSide == OwnerSide.Player;
+                // ── Type label: P# for SideA (local), E# for SideB (opponent) ──
+                bool   isPlayer  = entity.Side == BattleSide.SideA;
                 int    typeIndex = isPlayer ? ++playerCount : ++enemyCount;
                 string typeLabel = (isPlayer ? "P" : "E") + typeIndex;
 
@@ -282,7 +282,19 @@ namespace FrontierBastion.Client.DebugBattle
             GUI.color = Color.white;
         }
 
-        // ── Phase 1 helpers (unchanged) ──────────────────────────────────────
+        // ── Helpers ──────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Returns the BaseHp for <paramref name="side"/> from <paramref name="state"/>.
+        /// Returns Fp.Zero if the side is not found.
+        /// </summary>
+        private static Fp GetSideBaseHp(BattleState state, BattleSide side)
+        {
+            if (state?.Sides == null) return Fp.Zero;
+            for (int i = 0; i < state.Sides.Count; i++)
+                if (state.Sides[i].Side == side) return state.Sides[i].BaseHp;
+            return Fp.Zero;
+        }
 
         /// <summary>
         /// Returns [0..1] HP ratio using raw Fp values so no cast operator is required.

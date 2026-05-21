@@ -333,7 +333,7 @@ namespace FrontierBastion.Client.DebugBattle
                     float displayScale = EntitySize + idleBonus + contactBonus;
 
                     // ── Type label ────────────────────────────────────────────
-                    bool   isPlayer  = entity.OwnerSide == OwnerSide.Player;
+                    bool   isPlayer  = entity.Side == BattleSide.SideA;
                     int    typeIndex = isPlayer ? ++pCount : ++eCount;
                     string labelText = (isPlayer ? "P" : "E") + typeIndex;
 
@@ -420,8 +420,8 @@ namespace FrontierBastion.Client.DebugBattle
         {
             if (_playerBaseSR == null || _enemyBaseSR == null) return;
 
-            float pRatio = HpRatio(state.PlayerBaseHp, scenario.Config.PlayerBaseInitialHp);
-            float eRatio = HpRatio(state.EnemyBaseHp,  scenario.Config.EnemyBaseInitialHp);
+            float pRatio = HpRatio(GetSideBaseHp(state, BattleSide.SideA), scenario.Config.SideA.BaseInitialHp);
+            float eRatio = HpRatio(GetSideBaseHp(state, BattleSide.SideB), scenario.Config.SideB.BaseInitialHp);
 
             Color pCol = Color.Lerp(ColBaseDestroyed, ColPlayerBase, pRatio);
             Color eCol = Color.Lerp(ColBaseDestroyed, ColEnemyBase,  eRatio);
@@ -474,24 +474,29 @@ namespace FrontierBastion.Client.DebugBattle
             string text;
             Color  col;
 
+            // Local player = SideA. Victory when SideA wins.
             switch (state.EndReason)
             {
-                case BattleEndReason.EnemyBaseDestroyed:
+                case BattleEndReason.SideBBaseDestroyed:  // SideA wins
                     text = "VICTORY!";
                     col  = new Color(0.30f, 1.00f, 0.40f);
                     break;
 
-                case BattleEndReason.PlayerBaseDestroyed:
+                case BattleEndReason.SideABaseDestroyed:  // SideB wins
                     text = "DEFEAT";
                     col  = new Color(1.00f, 0.30f, 0.30f);
                     break;
 
-                default: // BattleEndReason.TimeOut — resolve by HP ratio comparison
-                    float pRatio = HpRatio(state.PlayerBaseHp, scenario.Config.PlayerBaseInitialHp);
-                    float eRatio = HpRatio(state.EnemyBaseHp,  scenario.Config.EnemyBaseInitialHp);
-                    bool  win    = pRatio > eRatio;
-                    text = win ? "TIMEOUT VICTORY" : "TIMEOUT DEFEAT";
-                    col  = win ? new Color(0.30f, 1.00f, 0.40f) : new Color(1.00f, 0.30f, 0.30f);
+                default: // BattleEndReason.TimeOut — resolve by HP ratio + tiebreaker
+                    float aRatio = HpRatio(GetSideBaseHp(state, BattleSide.SideA), scenario.Config.SideA.BaseInitialHp);
+                    float bRatio = HpRatio(GetSideBaseHp(state, BattleSide.SideB), scenario.Config.SideB.BaseInitialHp);
+                    BattleSide timeoutWinner;
+                    if (aRatio > bRatio)      timeoutWinner = BattleSide.SideA;
+                    else if (bRatio > aRatio) timeoutWinner = BattleSide.SideB;
+                    else                      timeoutWinner = scenario.Config.TimeOutTieWinnerSide;
+                    bool localWins = timeoutWinner == BattleSide.SideA;
+                    text = localWins ? "TIMEOUT VICTORY" : "TIMEOUT DEFEAT";
+                    col  = localWins ? new Color(0.30f, 1.00f, 0.40f) : new Color(1.00f, 0.30f, 0.30f);
                     break;
             }
 
@@ -587,11 +592,11 @@ namespace FrontierBastion.Client.DebugBattle
 
             for (int p = 0; p < lane.Entities.Count; p++)
             {
-                if (lane.Entities[p].OwnerSide != OwnerSide.Player) continue;
+                if (lane.Entities[p].Side != BattleSide.SideA) continue;
 
                 for (int e = 0; e < lane.Entities.Count; e++)
                 {
-                    if (lane.Entities[e].OwnerSide != OwnerSide.Enemy) continue;
+                    if (lane.Entities[e].Side != BattleSide.SideB) continue;
 
                     long diff = lane.Entities[p].PositionMilli - lane.Entities[e].PositionMilli;
                     if (diff < 0L) diff = -diff;
@@ -603,6 +608,19 @@ namespace FrontierBastion.Client.DebugBattle
 
             if (minNormDist >= ContactPulseDistance) return 0f;
             return 1f - minNormDist / ContactPulseDistance;
+        }
+
+        /// <summary>
+        /// Returns the BaseHp for <paramref name="side"/> from <paramref name="state"/>.
+        /// Returns Fp.Zero if the side is not found.
+        /// Read-only — never used for combat judgment.
+        /// </summary>
+        private static Fp GetSideBaseHp(BattleState state, BattleSide side)
+        {
+            if (state?.Sides == null) return Fp.Zero;
+            for (int i = 0; i < state.Sides.Count; i++)
+                if (state.Sides[i].Side == side) return state.Sides[i].BaseHp;
+            return Fp.Zero;
         }
 
         /// <summary>

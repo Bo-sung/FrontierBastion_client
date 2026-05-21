@@ -7,275 +7,365 @@ using BattleSim.Core.State;
 
 namespace FrontierBastion.Client.DebugBattle
 {
+    /// <summary>
+    /// Builds <see cref="DebugBattleScenario"/> instances for the debug runner.
+    ///
+    /// Migrated to SideA/SideB symmetric API:
+    ///   • No EnemySpawnSchedule. SideB actions are BattleCommand entries in commandsByTick.
+    ///   • BattleConfigSnapshot uses per-side BattleSideConfig.
+    ///   • BattleInitialState uses per-side BattleSideInitialState.
+    ///   • All BattleCommand factories require a BattleSide argument.
+    ///   • ExpectedWinnerSide replaces BattleOutcome.
+    ///
+    /// Phase 1 client policy: SideA = local player, SideB = AI opponent.
+    /// </summary>
     public static class DebugBattleScenarioFactory
     {
         public const string LaneGround = "lane_ground";
         public const string LaneAir    = "lane_air";
 
-        public static DebugBattleScenario CreateSmokePlayerVictory()
+        // ── F1 ───────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Smoke: SideA drone destroys SideB base at tick 1.
+        /// Expected: WinnerSide=SideA, EndReason=SideBBaseDestroyed, clearTick=1.
+        /// </summary>
+        public static DebugBattleScenario CreateSmokeSideAVictory()
         {
             BattleConfigSnapshot config = new BattleConfigSnapshot(
-                configVersion: "smoke_v1",
-                initialEnergy: Fp.FromInt(20),
-                maxEnergy: Fp.FromInt(100),
-                energyRegenPerTick: Fp.Zero,
-                pilotDeployCooldownTick: 200,
-                pilotReturnCooldownTick: 100,
+                configVersion: "smoke_v2",
+                sideA: new BattleSideConfig(
+                    BattleSide.SideA,
+                    baseInitialHp:      Fp.FromInt(1000),
+                    initialEnergy:      Fp.FromInt(20),
+                    maxEnergy:          Fp.FromInt(100),
+                    energyRegenPerTick: Fp.Zero),
+                sideB: new BattleSideConfig(
+                    BattleSide.SideB,
+                    baseInitialHp:      Fp.FromInt(1),    // fragile target
+                    initialEnergy:      Fp.Zero,
+                    maxEnergy:          Fp.FromInt(100),
+                    energyRegenPerTick: Fp.Zero),
+                pilotDeployCooldownTick:      200,
+                pilotReturnCooldownTick:      100,
                 pilotKnockoutDroneResumeTick: 50,
-                playerBaseInitialHp: Fp.FromInt(1000),
-                enemyBaseInitialHp: Fp.FromInt(1),
                 maxBattleTick: 10,
-                lanes: CreateSmokeLanes(),
-                enemySpawnSchedule: new EnemySpawnDefinition[0]);
+                lanes: CreateSmokeLanes());
 
             BattleInitialState initial = new BattleInitialState(
-                stageId: "smoke_victory",
+                stageId: "smoke_side_a_victory",
                 rngSeed: 1,
-                slots: new[] { CreateVictorySlot() });
+                sideA: new BattleSideInitialState(BattleSide.SideA, new[] { CreateHighAttackSlot(0) }),
+                sideB: new BattleSideInitialState(BattleSide.SideB, new[] { CreatePlaceholderSlot(0) }));
 
-            Dictionary<int, BattleCommand[]> commandsByTick = new Dictionary<int, BattleCommand[]>
+            // SideA drone reaches SideB base (1000 milli) in 1 tick at speed 2000.
+            var commandsByTick = new Dictionary<int, BattleCommand[]>
             {
-                { 0, new[] { BattleCommand.SpawnDroneSquad(0, 0, LaneGround) } },
+                { 0, new[] { BattleCommand.SpawnDroneSquad(0, 0, LaneGround, BattleSide.SideA) } },
             };
 
             return new DebugBattleScenario(
-                "smoke_player_victory",
-                "Smoke Player Victory",
-                config,
-                initial,
-                commandsByTick,
-                BattleOutcome.Victory,
-                BattleEndReason.EnemyBaseDestroyed,
-                1);
+                "smoke_side_a_victory",
+                "Smoke SideA Victory",
+                config, initial, commandsByTick,
+                expectedWinnerSide:    BattleSide.SideA,
+                expectedEndReason:     BattleEndReason.SideBBaseDestroyed,
+                expectedClearTimeTick: 1);
         }
 
-        public static DebugBattleScenario CreateSmokePlayerDefeat()
+        // ── F2 ───────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Smoke: SideB drone destroys SideA base at tick 1.
+        /// Expected: WinnerSide=SideB, EndReason=SideABaseDestroyed, clearTick=1.
+        /// </summary>
+        public static DebugBattleScenario CreateSmokeSideBVictory()
         {
             BattleConfigSnapshot config = new BattleConfigSnapshot(
-                configVersion: "smoke_v1",
-                initialEnergy: Fp.Zero,
-                maxEnergy: Fp.FromInt(100),
-                energyRegenPerTick: Fp.Zero,
-                pilotDeployCooldownTick: 200,
-                pilotReturnCooldownTick: 100,
+                configVersion: "smoke_v2",
+                sideA: new BattleSideConfig(
+                    BattleSide.SideA,
+                    baseInitialHp:      Fp.FromInt(1),    // fragile target
+                    initialEnergy:      Fp.Zero,
+                    maxEnergy:          Fp.FromInt(100),
+                    energyRegenPerTick: Fp.Zero),
+                sideB: new BattleSideConfig(
+                    BattleSide.SideB,
+                    baseInitialHp:      Fp.FromInt(1000),
+                    initialEnergy:      Fp.FromInt(20),
+                    maxEnergy:          Fp.FromInt(100),
+                    energyRegenPerTick: Fp.Zero),
+                pilotDeployCooldownTick:      200,
+                pilotReturnCooldownTick:      100,
                 pilotKnockoutDroneResumeTick: 50,
-                playerBaseInitialHp: Fp.FromInt(1),
-                enemyBaseInitialHp: Fp.FromInt(1000),
                 maxBattleTick: 10,
-                lanes: CreateSmokeLanes(),
-                enemySpawnSchedule: new[]
-                {
-                    new EnemySpawnDefinition(
-                        spawnTick: 1,
-                        laneId: LaneGround,
-                        hp: Fp.FromInt(200),
-                        attack: Fp.FromInt(50),
-                        rangeMilli: 500,
-                        speedMilliPerTick: 2000),
-                });
+                lanes: CreateSmokeLanes());
 
             BattleInitialState initial = new BattleInitialState(
-                stageId: "smoke_defeat",
+                stageId: "smoke_side_b_victory",
                 rngSeed: 2,
-                slots: new[] { CreateDefeatSlot() });
+                sideA: new BattleSideInitialState(BattleSide.SideA, new[] { CreatePlaceholderSlot(0) }),
+                sideB: new BattleSideInitialState(BattleSide.SideB, new[] { CreateHighAttackSlot(0) }));
+
+            // SideB drone travels from laneLength back to SideA base, reaching it in 1 tick.
+            var commandsByTick = new Dictionary<int, BattleCommand[]>
+            {
+                { 0, new[] { BattleCommand.SpawnDroneSquad(0, 0, LaneGround, BattleSide.SideB) } },
+            };
 
             return new DebugBattleScenario(
-                "smoke_player_defeat",
-                "Smoke Player Defeat",
-                config,
-                initial,
-                new Dictionary<int, BattleCommand[]>(),
-                BattleOutcome.Defeat,
-                BattleEndReason.PlayerBaseDestroyed,
-                1);
+                "smoke_side_b_victory",
+                "Smoke SideB Victory",
+                config, initial, commandsByTick,
+                expectedWinnerSide:    BattleSide.SideB,
+                expectedEndReason:     BattleEndReason.SideABaseDestroyed,
+                expectedClearTimeTick: 1);
         }
 
-        public static DebugBattleScenario CreateSmokeTimeoutDefeat()
-        {
-            BattleConfigSnapshot config = new BattleConfigSnapshot(
-                configVersion: "smoke_v1",
-                initialEnergy: Fp.Zero,
-                maxEnergy: Fp.FromInt(100),
-                energyRegenPerTick: Fp.Zero,
-                pilotDeployCooldownTick: 200,
-                pilotReturnCooldownTick: 100,
-                pilotKnockoutDroneResumeTick: 50,
-                playerBaseInitialHp: Fp.FromInt(1000),
-                enemyBaseInitialHp: Fp.FromInt(1000),
-                maxBattleTick: 3,
-                lanes: new[]
-                {
-                    new LaneDefinition(LaneGround, LaneType.Ground, 100000),
-                },
-                enemySpawnSchedule: new EnemySpawnDefinition[0]);
+        // ── F3 ───────────────────────────────────────────────────────────────
 
-            BattleInitialState initial = new BattleInitialState(
-                stageId: "smoke_timeout",
-                rngSeed: 3,
-                slots: new[] { CreateTimeoutSlot() });
-
-            return new DebugBattleScenario(
-                "smoke_timeout_defeat",
-                "Smoke Timeout Defeat",
-                config,
-                initial,
-                new Dictionary<int, BattleCommand[]>(),
-                BattleOutcome.Defeat,
-                BattleEndReason.TimeOut,
-                3);
-        }
-
+        /// <summary>
+        /// Interactive sandbox: 2 lanes, 2 SideA slots, SideB units scripted via fixture commands.
+        /// SideB fixture commands replace the old EnemySpawnSchedule.
+        /// SideA controlled manually (1=drone, 2=pilot, R=recall).
+        /// </summary>
         public static DebugBattleScenario CreateInteractiveSandbox()
         {
-            // Multi-slot / multi-lane sandbox for Q/E slot and Z/X lane selection testing.
-            // Slot 0 = Tank (cheap, slow, durable). Slot 1 = Striker (expensive, fast, fragile).
-            // Lane 0 = lane_ground (Ground, 5000 milli). Lane 1 = lane_air (Air, 3000 milli).
             BattleConfigSnapshot config = new BattleConfigSnapshot(
-                configVersion: "debug_interactive_v1",
-                initialEnergy: Fp.FromInt(60),
-                maxEnergy: Fp.FromInt(100),
-                energyRegenPerTick: Fp.FromFraction(5, 10),
-                pilotDeployCooldownTick: 200,
-                pilotReturnCooldownTick: 100,
+                configVersion: "debug_interactive_v2",
+                sideA: new BattleSideConfig(
+                    BattleSide.SideA,
+                    baseInitialHp:      Fp.FromInt(300),
+                    initialEnergy:      Fp.FromInt(60),
+                    maxEnergy:          Fp.FromInt(100),
+                    energyRegenPerTick: Fp.FromFraction(5, 10)),
+                sideB: new BattleSideConfig(
+                    BattleSide.SideB,
+                    baseInitialHp:      Fp.FromInt(300),
+                    initialEnergy:      Fp.FromInt(30),
+                    maxEnergy:          Fp.FromInt(100),
+                    energyRegenPerTick: Fp.FromFraction(5, 10)),
+                pilotDeployCooldownTick:      200,
+                pilotReturnCooldownTick:      100,
                 pilotKnockoutDroneResumeTick: 50,
-                playerBaseInitialHp: Fp.FromInt(300),
-                enemyBaseInitialHp: Fp.FromInt(300),
                 maxBattleTick: 600,
                 lanes: new[]
                 {
                     new LaneDefinition(LaneGround, LaneType.Ground, 5000),
                     new LaneDefinition(LaneAir,    LaneType.Air,    3000),
-                },
-                enemySpawnSchedule: new[]
-                {
-                    // lane_ground enemies
-                    new EnemySpawnDefinition( 20, LaneGround, Fp.FromInt( 80), Fp.FromInt(10), 400, 120),
-                    new EnemySpawnDefinition( 80, LaneGround, Fp.FromInt(100), Fp.FromInt(15), 450, 100),
-                    new EnemySpawnDefinition(200, LaneGround, Fp.FromInt(150), Fp.FromInt(20), 500,  90),
-                    // lane_air enemies
-                    new EnemySpawnDefinition( 40, LaneAir,    Fp.FromInt( 60), Fp.FromInt( 8), 300, 160),
-                    new EnemySpawnDefinition(120, LaneAir,    Fp.FromInt( 80), Fp.FromInt(12), 350, 140),
-                    new EnemySpawnDefinition(250, LaneAir,    Fp.FromInt(120), Fp.FromInt(18), 400, 120),
                 });
 
             BattleInitialState initial = new BattleInitialState(
                 stageId: "debug_interactive",
                 rngSeed: 99,
-                slots: new[]
+                sideA: new BattleSideInitialState(BattleSide.SideA, new[]
                 {
                     CreateInteractiveTankSlot(),
                     CreateInteractiveStrikerSlot(),
-                });
+                }),
+                sideB: new BattleSideInitialState(BattleSide.SideB, new[]
+                {
+                    CreateSideBGroundAttackerSlot(),  // slot 0 — ground lane
+                    CreateSideBairAttackerSlot(),     // slot 1 — air lane
+                }));
+
+            // SideB fixture commands replace old EnemySpawnSchedule.
+            // commandTick = old spawnTick - 1 (commands are applied before tick increment).
+            var commandsByTick = new Dictionary<int, BattleCommand[]>
+            {
+                { 19,  new[] { BattleCommand.SpawnDroneSquad(19,  0, LaneGround, BattleSide.SideB) } }, // was spawnTick 20
+                { 39,  new[] { BattleCommand.SpawnDroneSquad(39,  1, LaneAir,    BattleSide.SideB) } }, // was spawnTick 40
+                { 79,  new[] { BattleCommand.SpawnDroneSquad(79,  0, LaneGround, BattleSide.SideB) } }, // was spawnTick 80
+                { 119, new[] { BattleCommand.SpawnDroneSquad(119, 1, LaneAir,    BattleSide.SideB) } }, // was spawnTick 120
+                { 199, new[] { BattleCommand.SpawnDroneSquad(199, 0, LaneGround, BattleSide.SideB) } }, // was spawnTick 200
+                { 249, new[] { BattleCommand.SpawnDroneSquad(249, 1, LaneAir,    BattleSide.SideB) } }, // was spawnTick 250
+            };
 
             return new DebugBattleScenario(
                 "interactive_sandbox",
                 "Interactive Sandbox",
-                config,
-                initial,
-                new Dictionary<int, BattleCommand[]>(),
-                null,
-                null,
-                null);
+                config, initial, commandsByTick,
+                expectedWinnerSide:    null,   // no expectation — interactive
+                expectedEndReason:     null,
+                expectedClearTimeTick: null);
         }
+
+        // ── F4 ───────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Smoke: timeout with equal HP — SideB wins via TimeOutTieWinnerSide = SideB.
+        /// Expected: WinnerSide=SideB, EndReason=TimeOut, clearTick=3.
+        /// </summary>
+        public static DebugBattleScenario CreateSmokeTimeoutSideBTiebreak()
+        {
+            BattleConfigSnapshot config = new BattleConfigSnapshot(
+                configVersion: "smoke_v2",
+                sideA: new BattleSideConfig(
+                    BattleSide.SideA,
+                    baseInitialHp:      Fp.FromInt(1000),
+                    initialEnergy:      Fp.Zero,
+                    maxEnergy:          Fp.FromInt(100),
+                    energyRegenPerTick: Fp.Zero),
+                sideB: new BattleSideConfig(
+                    BattleSide.SideB,
+                    baseInitialHp:      Fp.FromInt(1000),
+                    initialEnergy:      Fp.Zero,
+                    maxEnergy:          Fp.FromInt(100),
+                    energyRegenPerTick: Fp.Zero),
+                pilotDeployCooldownTick:      200,
+                pilotReturnCooldownTick:      100,
+                pilotKnockoutDroneResumeTick: 50,
+                maxBattleTick: 3,
+                lanes: new[] { new LaneDefinition(LaneGround, LaneType.Ground, 100000) },
+                timeOutTieWinnerSide: BattleSide.SideB);   // SideB wins on equal-HP tie
+
+            BattleInitialState initial = new BattleInitialState(
+                stageId: "smoke_timeout_sideb_tiebreak",
+                rngSeed: 3,
+                sideA: new BattleSideInitialState(BattleSide.SideA, new[] { CreatePlaceholderSlot(0) }),
+                sideB: new BattleSideInitialState(BattleSide.SideB, new[] { CreatePlaceholderSlot(0) }));
+
+            return new DebugBattleScenario(
+                "smoke_timeout_sideb_tiebreak",
+                "Smoke Timeout SideB Tiebreak",
+                config, initial,
+                commandsByTick:        new Dictionary<int, BattleCommand[]>(),
+                expectedWinnerSide:    BattleSide.SideB,
+                expectedEndReason:     BattleEndReason.TimeOut,
+                expectedClearTimeTick: 3);
+        }
+
+        // ── Shared lane helpers ───────────────────────────────────────────────
 
         private static LaneDefinition[] CreateSmokeLanes()
         {
-            return new[]
-            {
-                new LaneDefinition(LaneGround, LaneType.Ground, 1000),
-            };
+            return new[] { new LaneDefinition(LaneGround, LaneType.Ground, 1000) };
         }
 
-        private static SlotDefinition CreateVictorySlot()
+        // ── SideA slot helpers ────────────────────────────────────────────────
+
+        /// <summary>High-attack drone that destroys the target base in 1 tick on a 1000-milli lane.</summary>
+        private static SlotDefinition CreateHighAttackSlot(int slotIndex)
         {
             return new SlotDefinition(
-                slotIndex: 0,
-                pilotId: "pilot_a",
-                droneSquadId: "drone_a",
-                energyCost: Fp.FromInt(20),
-                cooldownTick: 5,
-                droneHp: Fp.FromInt(100),
-                droneAttack: Fp.FromInt(50),
-                droneRangeMilli: 500,
+                slotIndex:            slotIndex,
+                pilotId:              "pilot_high",
+                droneSquadId:         "drone_high",
+                energyCost:           Fp.FromInt(20),
+                cooldownTick:         5,
+                droneHp:              Fp.FromInt(100),
+                droneAttack:          Fp.FromInt(50),
+                droneRangeMilli:      500,
                 droneSpeedMilliPerTick: 2000,
-                pilotHp: Fp.FromInt(200),
-                pilotAttack: Fp.FromInt(20),
-                pilotRangeMilli: 1000,
+                pilotHp:              Fp.FromInt(200),
+                pilotAttack:          Fp.FromInt(20),
+                pilotRangeMilli:      1000,
                 pilotSpeedMilliPerTick: 300);
         }
 
-        private static SlotDefinition CreateDefeatSlot()
+        /// <summary>Placeholder slot with zero-attack stats. Used for sides that don't spawn units.</summary>
+        private static SlotDefinition CreatePlaceholderSlot(int slotIndex)
         {
             return new SlotDefinition(
-                slotIndex: 0,
-                pilotId: "pilot_a",
-                droneSquadId: "drone_a",
-                energyCost: Fp.FromInt(20),
-                cooldownTick: 5,
-                droneHp: Fp.FromInt(100),
-                droneAttack: Fp.FromInt(10),
-                droneRangeMilli: 500,
-                droneSpeedMilliPerTick: 500,
-                pilotHp: Fp.FromInt(200),
-                pilotAttack: Fp.FromInt(20),
-                pilotRangeMilli: 1000,
-                pilotSpeedMilliPerTick: 300);
+                slotIndex:            slotIndex,
+                pilotId:              "placeholder",
+                droneSquadId:         "placeholder",
+                energyCost:           Fp.FromInt(99),   // too expensive to spawn accidentally
+                cooldownTick:         999,
+                droneHp:              Fp.FromInt(1),
+                droneAttack:          Fp.Zero,
+                droneRangeMilli:      0,
+                droneSpeedMilliPerTick: 0,
+                pilotHp:              Fp.FromInt(1),
+                pilotAttack:          Fp.Zero,
+                pilotRangeMilli:      0,
+                pilotSpeedMilliPerTick: 0);
         }
 
-        private static SlotDefinition CreateTimeoutSlot()
-        {
-            return new SlotDefinition(
-                slotIndex: 0,
-                pilotId: "pilot_a",
-                droneSquadId: "drone_a",
-                energyCost: Fp.FromInt(20),
-                cooldownTick: 5,
-                droneHp: Fp.FromInt(100),
-                droneAttack: Fp.FromInt(10),
-                droneRangeMilli: 500,
-                droneSpeedMilliPerTick: 500,
-                pilotHp: Fp.FromInt(200),
-                pilotAttack: Fp.FromInt(20),
-                pilotRangeMilli: 1000,
-                pilotSpeedMilliPerTick: 300);
-        }
-
-        /// <summary>Slot 0 — Tank: low cost, slow, high HP. Good for holding ground lanes.</summary>
+        /// <summary>Slot 0 — Tank: low cost, slow, durable. Good for ground lanes.</summary>
         private static SlotDefinition CreateInteractiveTankSlot()
         {
             return new SlotDefinition(
-                slotIndex: 0,
-                pilotId: "pilot_tank",
-                droneSquadId: "drone_tank",
-                energyCost: Fp.FromInt(15),
-                cooldownTick: 10,
-                droneHp: Fp.FromInt(120),
-                droneAttack: Fp.FromInt(20),
-                droneRangeMilli: 400,
+                slotIndex:            0,
+                pilotId:              "pilot_tank",
+                droneSquadId:         "drone_tank",
+                energyCost:           Fp.FromInt(15),
+                cooldownTick:         10,
+                droneHp:              Fp.FromInt(120),
+                droneAttack:          Fp.FromInt(20),
+                droneRangeMilli:      400,
                 droneSpeedMilliPerTick: 150,
-                pilotHp: Fp.FromInt(300),
-                pilotAttack: Fp.FromInt(30),
-                pilotRangeMilli: 600,
+                pilotHp:              Fp.FromInt(300),
+                pilotAttack:          Fp.FromInt(30),
+                pilotRangeMilli:      600,
                 pilotSpeedMilliPerTick: 180);
         }
 
-        /// <summary>Slot 1 — Striker: high cost, fast, low HP. Good for clearing air lanes quickly.</summary>
+        /// <summary>Slot 1 — Striker: high cost, fast, fragile. Good for air lanes.</summary>
         private static SlotDefinition CreateInteractiveStrikerSlot()
         {
             return new SlotDefinition(
-                slotIndex: 1,
-                pilotId: "pilot_striker",
-                droneSquadId: "drone_striker",
-                energyCost: Fp.FromInt(25),
-                cooldownTick: 20,
-                droneHp: Fp.FromInt(60),
-                droneAttack: Fp.FromInt(40),
-                droneRangeMilli: 350,
+                slotIndex:            1,
+                pilotId:              "pilot_striker",
+                droneSquadId:         "drone_striker",
+                energyCost:           Fp.FromInt(25),
+                cooldownTick:         20,
+                droneHp:              Fp.FromInt(60),
+                droneAttack:          Fp.FromInt(40),
+                droneRangeMilli:      350,
                 droneSpeedMilliPerTick: 300,
-                pilotHp: Fp.FromInt(150),
-                pilotAttack: Fp.FromInt(50),
-                pilotRangeMilli: 500,
+                pilotHp:              Fp.FromInt(150),
+                pilotAttack:          Fp.FromInt(50),
+                pilotRangeMilli:      500,
                 pilotSpeedMilliPerTick: 280);
+        }
+
+        // ── SideB slot helpers ────────────────────────────────────────────────
+
+        /// <summary>
+        /// SideB slot 0 — Ground Attacker.
+        /// Stats averaged from the old ground EnemySpawnDefinitions.
+        /// energyCost=10, cooldownTick=50 allows 3 spawns at ticks 19, 79, 199.
+        /// </summary>
+        private static SlotDefinition CreateSideBGroundAttackerSlot()
+        {
+            return new SlotDefinition(
+                slotIndex:            0,
+                pilotId:              "pilot_ground_b",
+                droneSquadId:         "drone_ground_b",
+                energyCost:           Fp.FromInt(10),
+                cooldownTick:         50,
+                droneHp:              Fp.FromInt(100),
+                droneAttack:          Fp.FromInt(15),
+                droneRangeMilli:      450,
+                droneSpeedMilliPerTick: 100,
+                pilotHp:              Fp.FromInt(150),
+                pilotAttack:          Fp.FromInt(20),
+                pilotRangeMilli:      500,
+                pilotSpeedMilliPerTick: 120);
+        }
+
+        /// <summary>
+        /// SideB slot 1 — Air Attacker.
+        /// Stats averaged from the old air EnemySpawnDefinitions.
+        /// energyCost=10, cooldownTick=70 allows 3 spawns at ticks 39, 119, 249.
+        /// </summary>
+        private static SlotDefinition CreateSideBairAttackerSlot()
+        {
+            return new SlotDefinition(
+                slotIndex:            1,
+                pilotId:              "pilot_air_b",
+                droneSquadId:         "drone_air_b",
+                energyCost:           Fp.FromInt(10),
+                cooldownTick:         70,
+                droneHp:              Fp.FromInt(80),
+                droneAttack:          Fp.FromInt(12),
+                droneRangeMilli:      350,
+                droneSpeedMilliPerTick: 140,
+                pilotHp:              Fp.FromInt(120),
+                pilotAttack:          Fp.FromInt(15),
+                pilotRangeMilli:      400,
+                pilotSpeedMilliPerTick: 150);
         }
     }
 }
