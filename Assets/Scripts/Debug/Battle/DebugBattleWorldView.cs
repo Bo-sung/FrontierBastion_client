@@ -40,6 +40,32 @@ namespace FrontierBastion.Client.DebugBattle
         private const float EntitySize    = 0.28f;   // square marker side in world units
         private const float EntityYSpread = 0.20f;   // Y offset per entity index (reduces overlap)
 
+        // ── Display-only motion / feedback constants ──────────────────────────
+        // All values are used exclusively for visual presentation.
+        // Time.time is the only time source; it is NEVER passed to BattleSim.Core.
+        /// <summary>Vertical bob amplitude in world units.</summary>
+        private const float BobAmplitude          = 0.04f;
+        /// <summary>Bob oscillation speed in radians per second.</summary>
+        private const float BobSpeed              = 3.5f;
+        /// <summary>Max extra scale added during idle pulse (world units).</summary>
+        private const float ScalePulseAmplitude   = 0.05f;
+        /// <summary>Idle scale pulse speed in rad/s.</summary>
+        private const float ScalePulseSpeed       = 2.0f;
+        /// <summary>Per-marker phase offset (radians) to desync neighbouring markers.</summary>
+        private const float PhaseOffset           = 1.2f;
+        /// <summary>Normalised distance [0..1] below which a contact pulse is triggered.</summary>
+        private const float ContactPulseDistance  = 0.15f;
+        /// <summary>Extra scale bonus at full contact (world units).</summary>
+        private const float ContactPulseAmplitude = 0.08f;
+        /// <summary>Speed of the contact scale pulse in rad/s (faster = more urgent).</summary>
+        private const float ContactPulseSpeed     = 6.0f;
+        /// <summary>HP ratio below which the base starts flickering.</summary>
+        private const float BaseLowHpThreshold    = 0.30f;
+        /// <summary>Max extra brightness added per flicker cycle.</summary>
+        private const float BasePulseBrightness   = 0.12f;
+        /// <summary>Base flicker speed in rad/s.</summary>
+        private const float BasePulseSpeed        = 5.0f;
+
         // ── TextMesh label sizing ─────────────────────────────────────────────
         /// <summary>
         /// Character height in world units for entity labels (P1/E1).
@@ -253,10 +279,17 @@ namespace FrontierBastion.Client.DebugBattle
         /// <summary>
         /// Iterates BattleState lane entities, positions markers and labels,
         /// and deactivates unused pool entries.
+        ///
+        /// Display-only motion applied here:
+        ///   • Y bob: Mathf.Sin(Time.time × BobSpeed + index × PhaseOffset) × BobAmplitude
+        ///   • Scale pulse: idle sine + contact-proximity boost
+        ///   • Label tracks the marker's animated top edge so it never drifts apart
+        /// Time.time is used exclusively for visual effect and is never sent to BattleSim.Core.
         /// </summary>
         private void SyncMarkers(BattleState state, LaneDefinition[] lanes, string selectedLaneId)
         {
-            int activeCount = 0;
+            float tNow       = Time.time;   // display clock only — never forwarded to Core
+            int   activeCount = 0;
 
             for (int i = 0; i < state.Lanes.Count && i < lanes.Length; i++)
             {
@@ -266,7 +299,11 @@ namespace FrontierBastion.Client.DebugBattle
                 float          laneY        = LaneYStep * i;
                 long           laneLen      = laneDef.LaneLengthMilli;
 
-                // Per-lane counters: P# and E# number entities independently, reset each lane.
+                // Pre-pass: contact intensity for this lane (display-only, not combat logic).
+                // Ranges 0 (no contact) to 1 (full contact).
+                float contactIntensity = ComputeLaneContactIntensity(laneState, laneLen);
+
+                // Per-lane P#/E# counters (display order only, no gameplay meaning).
                 int pCount = 0;
                 int eCount = 0;
 
@@ -274,19 +311,33 @@ namespace FrontierBastion.Client.DebugBattle
                 {
                     BattleEntity entity = laneState.Entities[j];
 
-                    // Position mapping: PositionMilli → world X
+                    // ── Position mapping: PositionMilli → world X ─────────────
                     float t      = (laneLen > 0L)
                         ? Mathf.Clamp01((float)entity.PositionMilli / (float)laneLen)
                         : 0f;
                     float worldX = Mathf.Lerp(-LaneHalfWidth, LaneHalfWidth, t);
-                    float worldY = laneY + j * EntityYSpread;
+                    float baseY  = laneY + j * EntityYSpread;
 
-                    // Type label (P1/E1/P2/E2 — display order only, no gameplay meaning)
+                    // ── Display-only motion ───────────────────────────────────
+                    // Each marker slot has a unique phase so neighbours don't bob in unison.
+                    float markerPhase = tNow * BobSpeed + activeCount * PhaseOffset;
+                    float bobY        = Mathf.Sin(markerPhase) * BobAmplitude;
+                    float displayY    = baseY + bobY;
+
+                    // Scale: idle pulse + contact proximity boost
+                    float idleSin      = 0.5f + 0.5f * Mathf.Sin(tNow * ScalePulseSpeed + activeCount * PhaseOffset * 0.7f);
+                    float idleBonus    = idleSin * ScalePulseAmplitude;
+                    float contactBonus = contactIntensity
+                        * ContactPulseAmplitude
+                        * (0.5f + 0.5f * Mathf.Sin(tNow * ContactPulseSpeed + activeCount * 0.5f));
+                    float displayScale = EntitySize + idleBonus + contactBonus;
+
+                    // ── Type label ────────────────────────────────────────────
                     bool   isPlayer  = entity.OwnerSide == OwnerSide.Player;
                     int    typeIndex = isPlayer ? ++pCount : ++eCount;
                     string labelText = (isPlayer ? "P" : "E") + typeIndex;
 
-                    // Colours: dim both marker and label on non-selected lanes
+                    // ── Colours with optional lane dimming ────────────────────
                     Color markerColor = isPlayer ? ColPlayerMarker : ColEnemyMarker;
                     Color labelColor  = isPlayer ? ColPlayerLabel   : ColEnemyLabel;
                     if (!laneSelected)
@@ -297,18 +348,19 @@ namespace FrontierBastion.Client.DebugBattle
 
                     // ── Marker (SpriteRenderer) ───────────────────────────────
                     SpriteRenderer marker = GetPooledMarker(activeCount);
-                    marker.transform.localPosition = new Vector3(worldX, worldY, 0f);
-                    marker.transform.localScale    = new Vector3(EntitySize, EntitySize, 1f);
+                    marker.transform.localPosition = new Vector3(worldX, displayY, 0f);
+                    marker.transform.localScale    = new Vector3(displayScale, displayScale, 1f);
                     marker.color = markerColor;
                     marker.gameObject.SetActive(true);
 
-                    // ── Label (TextMesh, placed above the marker) ─────────────
-                    // Positioned as a sibling of the marker (same _markerRoot parent)
-                    // so it is unaffected by the marker's scale.
+                    // ── Label (TextMesh) — tracks the animated marker top ─────
+                    // Sibling of the marker under _markerRoot: not affected by marker scale.
+                    // Top-edge of marker = displayY + displayScale * 0.5 (centred pivot).
                     TextMesh lm = GetPooledLabel(activeCount);
-                    lm.transform.localPosition = new Vector3(worldX,
-                        worldY + EntitySize + 0.04f,   // just above the marker top
-                        -0.1f);                         // slightly in front
+                    lm.transform.localPosition = new Vector3(
+                        worldX,
+                        displayY + displayScale * 0.5f + 0.04f,  // just above marker top
+                        -0.1f);                                    // in front of sprites
                     lm.text  = labelText;
                     lm.color = labelColor;
                     lm.gameObject.SetActive(true);
@@ -359,6 +411,10 @@ namespace FrontierBastion.Client.DebugBattle
         /// <summary>
         /// Blends each base pillar's colour from near-black (HP=0) to full colour (HP=max).
         /// HP ratio is computed from Fp.Raw values — no cast operator required.
+        ///
+        /// Display-only addition: when HP drops below <see cref="BaseLowHpThreshold"/>,
+        /// a brightness flicker is overlaid to signal critical state.
+        /// Time.time is used exclusively for the flicker — never forwarded to Core.
         /// </summary>
         private void UpdateBaseHp(BattleState state, DebugBattleScenario scenario)
         {
@@ -367,8 +423,33 @@ namespace FrontierBastion.Client.DebugBattle
             float pRatio = HpRatio(state.PlayerBaseHp, scenario.Config.PlayerBaseInitialHp);
             float eRatio = HpRatio(state.EnemyBaseHp,  scenario.Config.EnemyBaseInitialHp);
 
-            _playerBaseSR.color = Color.Lerp(ColBaseDestroyed, ColPlayerBase, pRatio);
-            _enemyBaseSR.color  = Color.Lerp(ColBaseDestroyed, ColEnemyBase,  eRatio);
+            Color pCol = Color.Lerp(ColBaseDestroyed, ColPlayerBase, pRatio);
+            Color eCol = Color.Lerp(ColBaseDestroyed, ColEnemyBase,  eRatio);
+
+            // Low-HP flicker: intensity scales with how close the base is to 0.
+            // pRatio > 0 guard avoids flickering on an already-destroyed base.
+            if (pRatio > 0f && pRatio < BaseLowHpThreshold)
+            {
+                float danger = 1f - pRatio / BaseLowHpThreshold;    // 0→1 as HP→0
+                float flicker = (0.5f + 0.5f * Mathf.Sin(Time.time * BasePulseSpeed)) * BasePulseBrightness * danger;
+                pCol = new Color(Mathf.Min(1f, pCol.r + flicker),
+                                 Mathf.Min(1f, pCol.g + flicker),
+                                 Mathf.Min(1f, pCol.b + flicker),
+                                 pCol.a);
+            }
+            if (eRatio > 0f && eRatio < BaseLowHpThreshold)
+            {
+                float danger  = 1f - eRatio / BaseLowHpThreshold;
+                // Slightly offset phase so player/enemy don't flicker in sync
+                float flicker = (0.5f + 0.5f * Mathf.Sin(Time.time * BasePulseSpeed * 1.1f)) * BasePulseBrightness * danger;
+                eCol = new Color(Mathf.Min(1f, eCol.r + flicker),
+                                 Mathf.Min(1f, eCol.g + flicker),
+                                 Mathf.Min(1f, eCol.b + flicker),
+                                 eCol.a);
+            }
+
+            _playerBaseSR.color = pCol;
+            _enemyBaseSR.color  = eCol;
         }
 
         // ── Result banner ─────────────────────────────────────────────────────
@@ -488,6 +569,40 @@ namespace FrontierBastion.Client.DebugBattle
             if (mr != null) mr.sortingOrder = sortingOrder;
 
             return tm;
+        }
+
+        /// <summary>
+        /// Returns a contact intensity in [0..1] based on the minimum normalised distance
+        /// between any player entity and any enemy entity in <paramref name="lane"/>.
+        /// Returns 0 when no opposite-side pair exists or when all pairs are farther apart
+        /// than <see cref="ContactPulseDistance"/>.
+        ///
+        /// Used exclusively for display (scale pulse boost) — not for combat logic.
+        /// </summary>
+        private static float ComputeLaneContactIntensity(LaneState lane, long laneLen)
+        {
+            if (laneLen <= 0L) return 0f;
+
+            float minNormDist = 1f;
+
+            for (int p = 0; p < lane.Entities.Count; p++)
+            {
+                if (lane.Entities[p].OwnerSide != OwnerSide.Player) continue;
+
+                for (int e = 0; e < lane.Entities.Count; e++)
+                {
+                    if (lane.Entities[e].OwnerSide != OwnerSide.Enemy) continue;
+
+                    long diff = lane.Entities[p].PositionMilli - lane.Entities[e].PositionMilli;
+                    if (diff < 0L) diff = -diff;
+
+                    float normDist = (float)diff / (float)laneLen;
+                    if (normDist < minNormDist) minNormDist = normDist;
+                }
+            }
+
+            if (minNormDist >= ContactPulseDistance) return 0f;
+            return 1f - minNormDist / ContactPulseDistance;
         }
 
         /// <summary>
