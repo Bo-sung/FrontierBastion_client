@@ -125,8 +125,9 @@ namespace FrontierBastion.Client.DebugBattle
         // ── F3 ───────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Interactive sandbox: 2 lanes, 2 SideA slots, SideB units scripted via fixture commands.
-        /// SideB fixture commands replace the old EnemySpawnSchedule.
+        /// Interactive sandbox: 2 lanes, 2 SideA slots, SideB driven by auto controller.
+        /// SideB has no scripted fixture commands — spawning is handled entirely by
+        /// <see cref="DebugBattleSideBAutoController"/> in the runner (A key to toggle).
         /// SideA controlled manually (1=drone, 2=pilot, R=recall).
         /// </summary>
         public static DebugBattleScenario CreateInteractiveSandbox()
@@ -169,17 +170,9 @@ namespace FrontierBastion.Client.DebugBattle
                     CreateSideBairAttackerSlot(),     // slot 1 — air lane
                 }));
 
-            // SideB fixture commands replace old EnemySpawnSchedule.
-            // commandTick = old spawnTick - 1 (commands are applied before tick increment).
-            var commandsByTick = new Dictionary<int, BattleCommand[]>
-            {
-                { 19,  new[] { BattleCommand.SpawnDroneSquad(19,  0, LaneGround, BattleSide.SideB) } }, // was spawnTick 20
-                { 39,  new[] { BattleCommand.SpawnDroneSquad(39,  1, LaneAir,    BattleSide.SideB) } }, // was spawnTick 40
-                { 79,  new[] { BattleCommand.SpawnDroneSquad(79,  0, LaneGround, BattleSide.SideB) } }, // was spawnTick 80
-                { 119, new[] { BattleCommand.SpawnDroneSquad(119, 1, LaneAir,    BattleSide.SideB) } }, // was spawnTick 120
-                { 199, new[] { BattleCommand.SpawnDroneSquad(199, 0, LaneGround, BattleSide.SideB) } }, // was spawnTick 200
-                { 249, new[] { BattleCommand.SpawnDroneSquad(249, 1, LaneAir,    BattleSide.SideB) } }, // was spawnTick 250
-            };
+            // No SideB scripted fixture commands — the auto controller handles SideB spawning.
+            // SideA fixture commands could be added here for guided tutorial scenarios.
+            var commandsByTick = new Dictionary<int, BattleCommand[]>();
 
             return new DebugBattleScenario(
                 "interactive_sandbox",

@@ -39,6 +39,9 @@ namespace FrontierBastion.Client.DebugBattle
         // World-space SpriteRenderer view — created at runtime, runs alongside IMGUI view.
         private DebugBattleWorldView _worldView;
 
+        // SideB auto controller — active by default in F3 Interactive Sandbox.
+        private DebugBattleSideBAutoController _sideBAutoController;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void AutoCreateInDebugBuilds()
         {
@@ -267,6 +270,13 @@ namespace FrontierBastion.Client.DebugBattle
                         TrySubmit(BattleCommand.RecallPilot(_simulator.CurrentTick, slotIdx, null, LocalSide));
                 }
             }
+
+            // ── SideB Auto toggle ────────────────────────────────────────────
+            if (keyboard.aKey.wasPressedThisFrame && _sideBAutoController != null)
+            {
+                _sideBAutoController.Toggle();
+                AddEvent("SideB Auto: " + (_sideBAutoController.IsEnabled ? "ON" : "OFF"));
+            }
         }
 
         private void ResetToScenario(DebugBattleScenario scenario, bool paused)
@@ -279,8 +289,18 @@ namespace FrontierBastion.Client.DebugBattle
             _tickAccumulator = 0f;
             _selectedSlotCursor = 0;
             _selectedLaneCursor = 0;
+
+            // SideB auto: on by default for Interactive Sandbox, off for smoke scenarios.
+            bool isSandbox = scenario != null && scenario.ScenarioId == "interactive_sandbox";
+            if (_sideBAutoController == null)
+                _sideBAutoController = new DebugBattleSideBAutoController(isSandbox);
+            else
+                _sideBAutoController.SetEnabled(isSandbox);
+
             _eventLines.Clear();
             AddEvent("Loaded " + scenario.DisplayName + (paused ? " (paused)" : ""));
+            if (_sideBAutoController != null)
+                AddEvent("SideB Auto: " + (_sideBAutoController.IsEnabled ? "ON" : "OFF"));
         }
 
         private void RunOneTick()
@@ -291,6 +311,7 @@ namespace FrontierBastion.Client.DebugBattle
             }
 
             SubmitFixtureCommandsForCurrentTick();
+            SubmitSideBAutoCommands();
 
             try
             {
@@ -323,6 +344,43 @@ namespace FrontierBastion.Client.DebugBattle
             }
         }
 
+        private void SubmitSideBAutoCommands()
+        {
+            if (_sideBAutoController == null || _lastState == null) return;
+
+            // Defensive guard: if a fixture command for SideB is already queued this tick,
+            // skip the auto controller entirely to prevent same-slot double-submit and the
+            // resulting AdvanceTick cooldown failure.
+            if (HasFixtureSideBCommandThisTick()) return;
+
+            BattleCommand cmd = _sideBAutoController.Evaluate(
+                _lastState, _scenario, _simulator.CurrentTick);
+            if (cmd == null) return;
+            try
+            {
+                _simulator.SubmitCommand(cmd);
+                AddEvent("Auto SideB " + cmd.CommandType
+                    + " slot=" + cmd.SlotIndex + " lane=" + cmd.LaneId);
+            }
+            catch (Exception ex)
+            {
+                AddEvent("Auto SideB rejected: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Returns true if the current tick's fixture commands include at least one
+        /// SideB command. Used to prevent auto-controller double-submit.
+        /// </summary>
+        private bool HasFixtureSideBCommandThisTick()
+        {
+            IReadOnlyList<BattleCommand> cmds =
+                _scenario.GetFixtureCommandsForTick(_simulator.CurrentTick);
+            for (int i = 0; i < cmds.Count; i++)
+                if (cmds[i].Side == BattleSide.SideB) return true;
+            return false;
+        }
+
         private void TrySubmit(BattleCommand command)
         {
             try
@@ -347,7 +405,15 @@ namespace FrontierBastion.Client.DebugBattle
             _guiBuilder.AppendLine("Controls: Space pause, T step");
             _guiBuilder.AppendLine("Controls: Q/E cycle slot, Z/X cycle lane");
             _guiBuilder.AppendLine("Controls: 1 spawn drone, 2 deploy pilot, R recall  [uses selected slot/lane]");
+            _guiBuilder.AppendLine("Controls: A toggle SideB auto  [F3 default: ON]");
             _guiBuilder.AppendLine();
+
+            // SideB auto status
+            if (_sideBAutoController != null)
+            {
+                _guiBuilder.AppendLine("SideB Auto: " + (_sideBAutoController.IsEnabled ? "ON" : "OFF"));
+                _guiBuilder.AppendLine();
+            }
 
             // Selected slot / lane summary
             int slotCount = _scenario?.InitialState?.SideA?.Slots?.Length ?? 0;
