@@ -16,8 +16,17 @@ namespace FrontierBastion.Client.Stage
     public static class StagePrototypeCatalog
     {
         // Lane ID constants — must match DebugBattleScenarioFactory.Lane* constants.
-        private const string LaneGround = "lane_ground";
-        private const string LaneAir    = "lane_air";
+        public const string LaneGround = "lane_ground";
+        public const string LaneAir    = "lane_air";
+
+        /// <summary>
+        /// Maps a deck slot index to its default lane ID.
+        /// Slots 0, 1, 2 default to lane_ground, slot 3 defaults to lane_air.
+        /// </summary>
+        public static string GetDefaultLaneId(int slotIndex)
+        {
+            return slotIndex == 3 ? LaneAir : LaneGround;
+        }
 
         // ── Stage definitions ─────────────────────────────────────────────────
 
@@ -73,101 +82,95 @@ namespace FrontierBastion.Client.Stage
 
         /// <summary>
         /// SideA prototype deck for the F3 Interactive Sandbox.
-        /// Four slots: Tank / Striker / Ranger / Runner.
-        /// All values are identical to the previous hardcoded slots in
-        /// <c>DebugBattleScenarioFactory</c>.
+        /// Four slots: Balanced Melee / Fragile Ranged / Melee Tank / Air Ranged.
         /// </summary>
         public static TroopCardData[] CreateSideAPrototypeDeck()
         {
             return new[]
             {
-                // Slot 0 — Tank: high HP, low attack, slow, cheap.
-                // Designed for sustained front-line presence on ground lanes.
+                // Slot 0 — Balanced Melee (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
                 {
                     SlotIndex              = 0,
-                    PilotId                = "pilot_a_tank",
-                    DroneSquadId           = "drone_a_tank",
+                    PilotId                = "pilot_a_melee_balanced",
+                    DroneSquadId           = "drone_a_melee_balanced",
                     EnergyCost             = Fp.FromInt(15),
-                    CooldownTick           = 12,
-                    DroneHp                = Fp.FromInt(180),
-                    DroneAttack            = Fp.FromInt(18),
-                    DroneDefense           = Fp.Zero,
-                    DroneRangeMilli        = 400,
-                    DroneSpeedMilliPerTick = 130,
-                    DroneAttackPeriodTick  = 1,
-                    PilotHp                = Fp.FromInt(360),
-                    PilotAttack            = Fp.FromInt(28),
-                    PilotDefense           = Fp.Zero,
-                    PilotRangeMilli        = 500,
-                    PilotSpeedMilliPerTick = 160,
-                    PilotAttackPeriodTick  = 1,
+                    CooldownTick           = 20,
+                    DroneHp                = Fp.FromInt(40),
+                    DroneAttack            = Fp.FromInt(10),
+                    DroneDefense           = Fp.FromInt(5),
+                    DroneRangeMilli        = 1000,
+                    DroneSpeedMilliPerTick = 200,
+                    DroneAttackPeriodTick  = 4,
+                    PilotHp                = Fp.FromInt(120),
+                    PilotAttack            = Fp.FromInt(15),
+                    PilotDefense           = Fp.FromInt(5),
+                    PilotRangeMilli        = 1000,
+                    PilotSpeedMilliPerTick = 220,
+                    PilotAttackPeriodTick  = 3,
                 },
-                // Slot 1 — Striker: low HP, high attack, fast, expensive.
-                // Glass-cannon burst; melts quickly if met by durable enemies.
+                // Slot 1 — Fragile Ranged (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
                 {
                     SlotIndex              = 1,
-                    PilotId                = "pilot_a_striker",
-                    DroneSquadId           = "drone_a_striker",
-                    EnergyCost             = Fp.FromInt(25),
+                    PilotId                = "pilot_a_ranged_fragile",
+                    DroneSquadId           = "drone_a_ranged_fragile",
+                    EnergyCost             = Fp.FromInt(20),
                     CooldownTick           = 20,
-                    DroneHp                = Fp.FromInt(60),
-                    DroneAttack            = Fp.FromInt(45),
-                    DroneDefense           = Fp.Zero,
-                    DroneRangeMilli        = 380,
-                    DroneSpeedMilliPerTick = 350,
-                    DroneAttackPeriodTick  = 1,
-                    PilotHp                = Fp.FromInt(140),
-                    PilotAttack            = Fp.FromInt(60),
-                    PilotDefense           = Fp.Zero,
-                    PilotRangeMilli        = 480,
-                    PilotSpeedMilliPerTick = 330,
-                    PilotAttackPeriodTick  = 1,
+                    DroneHp                = Fp.FromInt(30),
+                    DroneAttack            = Fp.FromInt(8),
+                    DroneDefense           = Fp.FromInt(3),
+                    DroneRangeMilli        = 4000,
+                    DroneSpeedMilliPerTick = 180,
+                    DroneAttackPeriodTick  = 3,
+                    PilotHp                = Fp.FromInt(80),
+                    PilotAttack            = Fp.FromInt(10),
+                    PilotDefense           = Fp.FromInt(5),
+                    PilotRangeMilli        = 5000,
+                    PilotSpeedMilliPerTick = 200,
+                    PilotAttackPeriodTick  = 2,
                 },
-                // Slot 2 — Ranger: long range, medium speed, medium cost.
-                // Engages from a safe distance; strong counter to slow enemies.
+                // Slot 2 — Melee Tank (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
                 {
                     SlotIndex              = 2,
-                    PilotId                = "pilot_a_ranger",
-                    DroneSquadId           = "drone_a_ranger",
-                    EnergyCost             = Fp.FromInt(22),
-                    CooldownTick           = 20,
-                    DroneHp                = Fp.FromInt(80),
-                    DroneAttack            = Fp.FromInt(28),
-                    DroneDefense           = Fp.Zero,
-                    DroneRangeMilli        = 1800,
-                    DroneSpeedMilliPerTick = 180,
-                    DroneAttackPeriodTick  = 1,
-                    PilotHp                = Fp.FromInt(160),
-                    PilotAttack            = Fp.FromInt(35),
-                    PilotDefense           = Fp.Zero,
-                    PilotRangeMilli        = 2200,
-                    PilotSpeedMilliPerTick = 200,
-                    PilotAttackPeriodTick  = 1,
+                    PilotId                = "pilot_a_melee_tank",
+                    DroneSquadId           = "drone_a_melee_tank",
+                    EnergyCost             = Fp.FromInt(18),
+                    CooldownTick           = 25,
+                    DroneHp                = Fp.FromInt(40),
+                    DroneAttack            = Fp.FromInt(7),
+                    DroneDefense           = Fp.FromInt(8),
+                    DroneRangeMilli        = 1000,
+                    DroneSpeedMilliPerTick = 100,
+                    DroneAttackPeriodTick  = 4,
+                    PilotHp                = Fp.FromInt(150),
+                    PilotAttack            = Fp.FromInt(7),
+                    PilotDefense           = Fp.FromInt(10),
+                    PilotRangeMilli        = 1000,
+                    PilotSpeedMilliPerTick = 110,
+                    PilotAttackPeriodTick  = 4,
                 },
-                // Slot 3 — Runner: very fast, very cheap, very weak.
-                // Rushes past combat to deal base damage; highly expendable.
+                // Slot 3 — Air Ranged (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
                 {
                     SlotIndex              = 3,
-                    PilotId                = "pilot_a_runner",
-                    DroneSquadId           = "drone_a_runner",
-                    EnergyCost             = Fp.FromInt(10),
-                    CooldownTick           = 10,
-                    DroneHp                = Fp.FromInt(50),
-                    DroneAttack            = Fp.FromInt(10),
-                    DroneDefense           = Fp.Zero,
-                    DroneRangeMilli        = 300,
-                    DroneSpeedMilliPerTick = 450,
-                    DroneAttackPeriodTick  = 1,
-                    PilotHp                = Fp.FromInt(100),
-                    PilotAttack            = Fp.FromInt(15),
-                    PilotDefense           = Fp.Zero,
-                    PilotRangeMilli        = 380,
-                    PilotSpeedMilliPerTick = 420,
-                    PilotAttackPeriodTick  = 1,
+                    PilotId                = "pilot_a_air_ranged",
+                    DroneSquadId           = "drone_a_air_ranged",
+                    EnergyCost             = Fp.FromInt(22),
+                    CooldownTick           = 20,
+                    DroneHp                = Fp.FromInt(30),
+                    DroneAttack            = Fp.FromInt(8),
+                    DroneDefense           = Fp.FromInt(1),
+                    DroneRangeMilli        = 6000,
+                    DroneSpeedMilliPerTick = 220,
+                    DroneAttackPeriodTick  = 3,
+                    PilotHp                = Fp.FromInt(80),
+                    PilotAttack            = Fp.FromInt(10),
+                    PilotDefense           = Fp.FromInt(2),
+                    PilotRangeMilli        = 6000,
+                    PilotSpeedMilliPerTick = 240,
+                    PilotAttackPeriodTick  = 2,
                 },
             };
         }
@@ -176,101 +179,95 @@ namespace FrontierBastion.Client.Stage
 
         /// <summary>
         /// SideB prototype deck for the F3 Interactive Sandbox (auto-opponent).
-        /// Four slots: Bruiser / Shooter / Swarm / Raider.
-        /// All values are identical to the previous hardcoded slots in
-        /// <c>DebugBattleScenarioFactory</c>.
+        /// Symmetrically mirrors the SideA deck.
         /// </summary>
         private static TroopCardData[] CreateSideBPrototypeDeck()
         {
             return new[]
             {
-                // Slot 0 — Bruiser: high HP, medium attack, slow.
-                // Durable front-line pressure; soaks SideA hits while grinding forward.
+                // Slot 0 — Balanced Melee (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
                 {
                     SlotIndex              = 0,
-                    PilotId                = "pilot_b_bruiser",
-                    DroneSquadId           = "drone_b_bruiser",
-                    EnergyCost             = Fp.FromInt(14),
-                    CooldownTick           = 45,
-                    DroneHp                = Fp.FromInt(160),
-                    DroneAttack            = Fp.FromInt(20),
-                    DroneDefense           = Fp.Zero,
-                    DroneRangeMilli        = 380,
-                    DroneSpeedMilliPerTick = 110,
-                    DroneAttackPeriodTick  = 1,
-                    PilotHp                = Fp.FromInt(280),
-                    PilotAttack            = Fp.FromInt(28),
-                    PilotDefense           = Fp.Zero,
-                    PilotRangeMilli        = 480,
-                    PilotSpeedMilliPerTick = 130,
-                    PilotAttackPeriodTick  = 1,
+                    PilotId                = "pilot_b_melee_balanced",
+                    DroneSquadId           = "drone_b_melee_balanced",
+                    EnergyCost             = Fp.FromInt(15),
+                    CooldownTick           = 20,
+                    DroneHp                = Fp.FromInt(40),
+                    DroneAttack            = Fp.FromInt(10),
+                    DroneDefense           = Fp.FromInt(5),
+                    DroneRangeMilli        = 1000,
+                    DroneSpeedMilliPerTick = 200,
+                    DroneAttackPeriodTick  = 4,
+                    PilotHp                = Fp.FromInt(120),
+                    PilotAttack            = Fp.FromInt(15),
+                    PilotDefense           = Fp.FromInt(5),
+                    PilotRangeMilli        = 1000,
+                    PilotSpeedMilliPerTick = 220,
+                    PilotAttackPeriodTick  = 3,
                 },
-                // Slot 1 — Shooter: low-mid HP, high attack, very long range, medium speed.
-                // Engages SideA units before they close to melee range.
+                // Slot 1 — Fragile Ranged (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
                 {
                     SlotIndex              = 1,
-                    PilotId                = "pilot_b_shooter",
-                    DroneSquadId           = "drone_b_shooter",
+                    PilotId                = "pilot_b_ranged_fragile",
+                    DroneSquadId           = "drone_b_ranged_fragile",
                     EnergyCost             = Fp.FromInt(20),
-                    CooldownTick           = 55,
-                    DroneHp                = Fp.FromInt(80),
-                    DroneAttack            = Fp.FromInt(30),
-                    DroneDefense           = Fp.Zero,
-                    DroneRangeMilli        = 2000,
-                    DroneSpeedMilliPerTick = 160,
-                    DroneAttackPeriodTick  = 1,
-                    PilotHp                = Fp.FromInt(140),
-                    PilotAttack            = Fp.FromInt(38),
-                    PilotDefense           = Fp.Zero,
-                    PilotRangeMilli        = 2400,
-                    PilotSpeedMilliPerTick = 180,
-                    PilotAttackPeriodTick  = 1,
+                    CooldownTick           = 20,
+                    DroneHp                = Fp.FromInt(30),
+                    DroneAttack            = Fp.FromInt(8),
+                    DroneDefense           = Fp.FromInt(3),
+                    DroneRangeMilli        = 4000,
+                    DroneSpeedMilliPerTick = 180,
+                    DroneAttackPeriodTick  = 3,
+                    PilotHp                = Fp.FromInt(80),
+                    PilotAttack            = Fp.FromInt(10),
+                    PilotDefense           = Fp.FromInt(5),
+                    PilotRangeMilli        = 5000,
+                    PilotSpeedMilliPerTick = 200,
+                    PilotAttackPeriodTick  = 2,
                 },
-                // Slot 2 — Swarm: very low HP and attack, fast, very cheap.
-                // Numbers game; overwhelms through quantity when energy permits.
+                // Slot 2 — Melee Tank (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
                 {
                     SlotIndex              = 2,
-                    PilotId                = "pilot_b_swarm",
-                    DroneSquadId           = "drone_b_swarm",
-                    EnergyCost             = Fp.FromInt(9),
+                    PilotId                = "pilot_b_melee_tank",
+                    DroneSquadId           = "drone_b_melee_tank",
+                    EnergyCost             = Fp.FromInt(18),
                     CooldownTick           = 25,
-                    DroneHp                = Fp.FromInt(45),
-                    DroneAttack            = Fp.FromInt(8),
-                    DroneDefense           = Fp.Zero,
-                    DroneRangeMilli        = 300,
-                    DroneSpeedMilliPerTick = 380,
-                    DroneAttackPeriodTick  = 1,
-                    PilotHp                = Fp.FromInt(80),
-                    PilotAttack            = Fp.FromInt(12),
-                    PilotDefense           = Fp.Zero,
-                    PilotRangeMilli        = 380,
-                    PilotSpeedMilliPerTick = 360,
-                    PilotAttackPeriodTick  = 1,
+                    DroneHp                = Fp.FromInt(40),
+                    DroneAttack            = Fp.FromInt(7),
+                    DroneDefense           = Fp.FromInt(8),
+                    DroneRangeMilli        = 1000,
+                    DroneSpeedMilliPerTick = 100,
+                    DroneAttackPeriodTick  = 4,
+                    PilotHp                = Fp.FromInt(150),
+                    PilotAttack            = Fp.FromInt(7),
+                    PilotDefense           = Fp.FromInt(10),
+                    PilotRangeMilli        = 1000,
+                    PilotSpeedMilliPerTick = 110,
+                    PilotAttackPeriodTick  = 4,
                 },
-                // Slot 3 — Raider: low-mid HP, medium attack, very fast.
-                // Breakthrough rush; aims to reach the SideA base before interception.
+                // Slot 3 — Air Ranged (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
                 {
                     SlotIndex              = 3,
-                    PilotId                = "pilot_b_raider",
-                    DroneSquadId           = "drone_b_raider",
-                    EnergyCost             = Fp.FromInt(16),
-                    CooldownTick           = 40,
-                    DroneHp                = Fp.FromInt(90),
-                    DroneAttack            = Fp.FromInt(22),
-                    DroneDefense           = Fp.Zero,
-                    DroneRangeMilli        = 420,
-                    DroneSpeedMilliPerTick = 320,
-                    DroneAttackPeriodTick  = 1,
-                    PilotHp                = Fp.FromInt(160),
-                    PilotAttack            = Fp.FromInt(30),
-                    PilotDefense           = Fp.Zero,
-                    PilotRangeMilli        = 500,
-                    PilotSpeedMilliPerTick = 300,
-                    PilotAttackPeriodTick  = 1,
+                    PilotId                = "pilot_b_air_ranged",
+                    DroneSquadId           = "drone_b_air_ranged",
+                    EnergyCost             = Fp.FromInt(22),
+                    CooldownTick           = 20,
+                    DroneHp                = Fp.FromInt(30),
+                    DroneAttack            = Fp.FromInt(8),
+                    DroneDefense           = Fp.FromInt(1),
+                    DroneRangeMilli        = 6000,
+                    DroneSpeedMilliPerTick = 220,
+                    DroneAttackPeriodTick  = 3,
+                    PilotHp                = Fp.FromInt(80),
+                    PilotAttack            = Fp.FromInt(10),
+                    PilotDefense           = Fp.FromInt(2),
+                    PilotRangeMilli        = 6000,
+                    PilotSpeedMilliPerTick = 240,
+                    PilotAttackPeriodTick  = 2,
                 },
             };
         }
