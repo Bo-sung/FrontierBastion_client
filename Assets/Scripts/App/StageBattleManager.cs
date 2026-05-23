@@ -1,4 +1,4 @@
-﻿using FrontierBastion.Client.Stage;
+using FrontierBastion.Client.Stage;
 using UnityEngine;
 
 namespace FrontierBastion.Client.App
@@ -32,6 +32,11 @@ namespace FrontierBastion.Client.App
         {
             StageDefinition stage     = _stageData.GetPrototypeStage();
             TroopCardData[] sideADeck = _stageData.GetPrototypeSideADeck();
+            LastSession = new StageBattleSession(stage, sideADeck);
+        }
+
+        public void StartPrototypeBattle(StageDefinition stage, TroopCardData[] sideADeck)
+        {
             LastSession = new StageBattleSession(stage, sideADeck);
         }
 

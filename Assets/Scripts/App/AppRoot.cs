@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 namespace FrontierBastion.Client.App
 {
@@ -47,6 +47,10 @@ namespace FrontierBastion.Client.App
 
             StageBattle.Bind(StageData);
             StageFlow.Bind(StageBattle);
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            gameObject.AddComponent<StageAppDebugController>();
+#endif
         }
     }
 }
