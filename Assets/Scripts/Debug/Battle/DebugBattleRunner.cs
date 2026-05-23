@@ -12,13 +12,28 @@ using UnityEngine.InputSystem;
 
 namespace FrontierBastion.Client.DebugBattle
 {
+    /// <summary>
+    /// Debug battle runner — tick loop, input, scenario management.
+    ///
+    /// Responsibilities:
+    ///   • Owns the simulation loop (BattleSimulator, tick accumulator).
+    ///   • Handles keyboard input and dispatches BattleCommands.
+    ///   • Drives SideB auto controller.
+    ///   • Feeds read-only context to <see cref="DebugBattleStatusTextBuilder"/>
+    ///     for IMGUI display.
+    ///   • Drives <see cref="DebugBattleWorldView"/> and
+    ///     <see cref="DebugBattleStageView"/> for visual output.
+    ///
+    /// Status text formatting is fully delegated to
+    /// <see cref="DebugBattleStatusTextBuilder"/>; this class does not build
+    /// display strings directly.
+    /// </summary>
     public sealed class DebugBattleRunner : MonoBehaviour
     {
         private const float TickSeconds   = 0.05f;
         private const int   MaxEventLines = 12;
 
-        private readonly Queue<string>  _eventLines = new Queue<string>();
-        private readonly StringBuilder  _guiBuilder = new StringBuilder(4096);
+        private readonly Queue<string> _eventLines = new Queue<string>();
 
         private DebugBattleScenario _scenario;
         private BattleSimulator     _simulator;
@@ -41,6 +56,13 @@ namespace FrontierBastion.Client.DebugBattle
 
         // SideB auto controller — active by default in F3 Interactive Sandbox.
         private DebugBattleSideBAutoController _sideBAutoController;
+
+        // Same-tick submitted-command tracking.
+        // Prevents duplicate re-submission after a failed AdvanceTick (Core does not
+        // clear _pendingCommands when it throws, so stale commands survive to the next
+        // attempt).  Reset whenever the tick number changes.
+        private int                    _submittedCommandTick  = -1;
+        private readonly List<BattleCommand> _submittedCommandsThisTick = new List<BattleCommand>(8);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void AutoCreateInDebugBuilds()
@@ -79,24 +101,21 @@ namespace FrontierBastion.Client.DebugBattle
 
         private void LateUpdate()
         {
-            // Refresh world-space SpriteRenderer view every frame after tick processing.
             if (_worldView != null)
                 _worldView.Render(_scenario, _lastState, SelectedLaneId);
         }
 
         private void OnGUI()
         {
-            // Panel height increased to accommodate 4-slot SideA + SideB status.
             GUILayout.BeginArea(new Rect(12, 12, 560, 860), GUI.skin.box);
-            GUILayout.Label(BuildStatusText());
+            GUILayout.Label(DebugBattleStatusTextBuilder.Build(BuildStatusContext()));
             GUILayout.EndArea();
             DebugBattleStageView.Draw(_scenario, _lastState, SelectedLaneId);
         }
 
         private void OnDrawGizmos()
         {
-            if (_scenario == null || _lastState == null)
-                return;
+            if (_scenario == null || _lastState == null) return;
 
             for (int i = 0; i < _lastState.Lanes.Count; i++)
             {
@@ -119,6 +138,30 @@ namespace FrontierBastion.Client.DebugBattle
                     Gizmos.DrawSphere(position, 0.14f);
                 }
             }
+        }
+
+        // ------------------------------------------------------------------ context
+
+        /// <summary>
+        /// Assembles the read-only <see cref="DebugBattleStatusContext"/> passed to
+        /// <see cref="DebugBattleStatusTextBuilder"/>. Called once per <c>OnGUI</c> frame.
+        /// </summary>
+        private DebugBattleStatusContext BuildStatusContext()
+        {
+            return new DebugBattleStatusContext
+            {
+                Scenario           = _scenario,
+                LastState          = _lastState,
+                Result             = _result,
+                IsPaused           = _isPaused,
+                SelectedSlotIndex  = SelectedSlotIndex,
+                SelectedSlotCursor = _selectedSlotCursor,
+                SelectedLaneId     = SelectedLaneId,
+                SelectedLaneCursor = _selectedLaneCursor,
+                SideBAutoEnabled   = _sideBAutoController?.IsEnabled ?? false,
+                SideBAutoAvailable = _sideBAutoController != null,
+                EventLines         = _eventLines,
+            };
         }
 
         // ------------------------------------------------------------------ input
@@ -174,14 +217,15 @@ namespace FrontierBastion.Client.DebugBattle
                     AddEvent("SpawnDrone rejected: lane '" + laneId + "' not in scenario");
                 else
                 {
-                    SlotState slot1 = FindLastSlotState(slotIdx);
-                    if (slot1 != null && slot1.DroneCooldownTick > 0)
-                        AddEvent("SpawnDrone rejected: slot " + slotIdx + " cooldown (" + slot1.DroneCooldownTick + ")");
-                    else if (slot1 != null && slot1.IsPilotDeployed)
+                    SlotState ss = FindLastSlotState(slotIdx);
+                    if (ss != null && ss.DroneCooldownTick > 0)
+                        AddEvent("SpawnDrone rejected: slot " + slotIdx + " cooldown (" + ss.DroneCooldownTick + ")");
+                    else if (ss != null && ss.IsPilotDeployed)
                         AddEvent("SpawnDrone rejected: slot " + slotIdx + " pilot deployed");
                     else if (_lastState != null && (GetLocalSideState()?.Energy ?? Fp.Zero) < FindSlotEnergyCost(slotIdx))
-                        AddEvent("SpawnDrone rejected: E=" + FpDisplay(GetLocalSideState()?.Energy ?? Fp.Zero)
-                            + " < cost=" + FpInt(FindSlotEnergyCost(slotIdx)));
+                        AddEvent("SpawnDrone rejected: E="
+                            + DebugBattleStatusTextBuilder.FpDisplay(GetLocalSideState()?.Energy ?? Fp.Zero)
+                            + " < cost=" + DebugBattleStatusTextBuilder.FpInt(FindSlotEnergyCost(slotIdx)));
                     else
                         TrySubmit(BattleCommand.SpawnDroneSquad(_simulator.CurrentTick, slotIdx, laneId, LocalSide));
                 }
@@ -198,10 +242,10 @@ namespace FrontierBastion.Client.DebugBattle
                     AddEvent("DeployPilot rejected: lane '" + laneId + "' not in scenario");
                 else
                 {
-                    SlotState slot2 = FindLastSlotState(slotIdx);
-                    if (slot2 != null && slot2.IsPilotDeployed)
+                    SlotState ss = FindLastSlotState(slotIdx);
+                    if (ss != null && ss.IsPilotDeployed)
                         AddEvent("DeployPilot rejected: slot " + slotIdx + " already deployed");
-                    else if (slot2 != null && slot2.IsPilotKnockedOut)
+                    else if (ss != null && ss.IsPilotKnockedOut)
                         AddEvent("DeployPilot rejected: slot " + slotIdx + " pilot KO");
                     else
                         TrySubmit(BattleCommand.DeployPilot(_simulator.CurrentTick, slotIdx, laneId, LocalSide));
@@ -216,8 +260,8 @@ namespace FrontierBastion.Client.DebugBattle
                     AddEvent("RecallPilot rejected: slot " + slotIdx + " not in scenario");
                 else
                 {
-                    SlotState slotR = FindLastSlotState(slotIdx);
-                    if (slotR != null && !slotR.IsPilotDeployed)
+                    SlotState ss = FindLastSlotState(slotIdx);
+                    if (ss != null && !ss.IsPilotDeployed)
                         AddEvent("RecallPilot rejected: slot " + slotIdx + " pilot not deployed");
                     else
                         TrySubmit(BattleCommand.RecallPilot(_simulator.CurrentTick, slotIdx, null, LocalSide));
@@ -252,6 +296,9 @@ namespace FrontierBastion.Client.DebugBattle
             else
                 _sideBAutoController.SetEnabled(isSandbox);
 
+            _submittedCommandsThisTick.Clear();
+            _submittedCommandTick = -1;
+
             _eventLines.Clear();
             AddEvent("Loaded: " + scenario.DisplayName + (paused ? " [paused]" : ""));
             AddEvent("SideB Auto: " + (_sideBAutoController.IsEnabled ? "ON" : "OFF"));
@@ -263,6 +310,7 @@ namespace FrontierBastion.Client.DebugBattle
         {
             if (_simulator == null || _simulator.IsTerminated) return;
 
+            ResetSubmittedCommandsIfTickChanged();
             SubmitFixtureCommandsForCurrentTick();
             SubmitSideBAutoCommands();
 
@@ -273,7 +321,8 @@ namespace FrontierBastion.Client.DebugBattle
             }
             catch (Exception ex)
             {
-                AddEvent("AdvanceTick failed: " + ex.Message);
+                Debug.LogError("[DebugBattle] AdvanceTick failed.\n" + BuildFailureDump(ex));
+                AddEvent("AdvanceTick failed: " + ex.Message + " (dump in Console)");
                 _isPaused = true;
                 return;
             }
@@ -282,9 +331,10 @@ namespace FrontierBastion.Client.DebugBattle
             {
                 _result = _simulator.GetResult();
                 bool ok = _scenario.MatchesExpected(_result);
-                AddEvent("Result: " + FormatResult(_result) + "  expected=" + ok);
+                string resultStr = DebugBattleStatusTextBuilder.FormatResult(_result);
+                AddEvent("Result: " + resultStr + "  expected=" + ok);
                 Debug.Log("[DebugBattleRunner] " + _scenario.DisplayName
-                    + " result: " + FormatResult(_result) + " expected=" + ok);
+                    + " result: " + resultStr + " expected=" + ok);
             }
         }
 
@@ -305,9 +355,21 @@ namespace FrontierBastion.Client.DebugBattle
             BattleCommand cmd = _sideBAutoController.Evaluate(
                 _lastState, _scenario, _simulator.CurrentTick);
             if (cmd == null) return;
+
+            // Duplicate guard: if any command for the same side+slot was already submitted
+            // this tick (e.g. from a previous failed AdvanceTick whose stale commands
+            // remain in Core's queue), skip re-submission.
+            ResetSubmittedCommandsIfTickChanged();
+            if (HasSubmittedSameTickSlotCommand(cmd))
+            {
+                AddEvent("Auto-B skipped: pending same-tick SideB slot=" + cmd.SlotIndex);
+                return;
+            }
+
             try
             {
                 _simulator.SubmitCommand(cmd);
+                RecordSubmittedCommand(cmd);
                 AddEvent("Auto-B " + cmd.CommandType + " slot=" + cmd.SlotIndex + " lane=" + cmd.LaneId);
             }
             catch (Exception ex)
@@ -331,9 +393,22 @@ namespace FrontierBastion.Client.DebugBattle
 
         private void TrySubmit(BattleCommand command)
         {
+            ResetSubmittedCommandsIfTickChanged();
+
+            // Same-tick slot guard — applies to both SideA manual input and fixture commands.
+            // Any pending command on the same side+slot blocks further commands this tick
+            // because _lastState does not reflect pending effects; Core will fail on the
+            // second operation targeting the same slot.
+            if (HasSubmittedSameTickSlotCommand(command))
+            {
+                AddEvent("Cmd skipped: pending same-tick " + command.Side + " slot=" + command.SlotIndex);
+                return;
+            }
+
             try
             {
                 _simulator.SubmitCommand(command);
+                RecordSubmittedCommand(command);
                 AddEvent("Cmd " + command.Side + " " + command.CommandType
                     + " slot=" + command.SlotIndex + " lane=" + command.LaneId);
             }
@@ -343,229 +418,196 @@ namespace FrontierBastion.Client.DebugBattle
             }
         }
 
-        // ------------------------------------------------------------------ IMGUI status
-
-        private string BuildStatusText()
-        {
-            _guiBuilder.Length = 0;
-
-            // ── Header ──────────────────────────────────────────────────────
-            _guiBuilder.AppendLine("── Frontier Bastion  Debug Battle ─────────────────");
-            _guiBuilder.AppendLine("Scenario : " + (_scenario != null ? _scenario.DisplayName : "<none>"));
-
-            if (_lastState != null)
-            {
-                string tickLine = "Tick     : " + _lastState.CurrentTick
-                    + "   " + (_isPaused ? "[PAUSED]" : "[running]");
-                if (_lastState.IsTerminated)
-                    tickLine += "   TERMINATED / " + _lastState.EndReason;
-                _guiBuilder.AppendLine(tickLine);
-            }
-            else
-            {
-                _guiBuilder.AppendLine("           " + (_isPaused ? "[PAUSED]" : "[running]"));
-            }
-            _guiBuilder.AppendLine();
-
-            // ── Controls ────────────────────────────────────────────────────
-            _guiBuilder.AppendLine("── Controls ────────────────────────────────────────");
-            _guiBuilder.AppendLine(" F1 SideA Victory  F2 SideB Victory  F3 Interactive  F4 Timeout");
-            _guiBuilder.AppendLine(" Backspace : reset (paused)");
-            _guiBuilder.AppendLine(" Space : pause/resume   T : manual step");
-            _guiBuilder.AppendLine(" Q / E : prev / next slot   Z / X : prev / next lane");
-            _guiBuilder.AppendLine(" 1 SpawnDrone   2 DeployPilot   R Recall  [selected slot+lane]");
-            _guiBuilder.AppendLine(" A : SideB Auto ON/OFF  [F3 default: ON]");
-            _guiBuilder.AppendLine();
-
-            if (_lastState != null)
-            {
-                BattleSideState sideAState = GetSideState(_lastState, BattleSide.SideA);
-                BattleSideState sideBState = GetSideState(_lastState, BattleSide.SideB);
-                SlotDefinition[] sideADefs = _scenario?.InitialState?.SideA?.Slots;
-                SlotDefinition[] sideBDefs = _scenario?.InitialState?.SideB?.Slots;
-
-                // ── SideA ────────────────────────────────────────────────────
-                _guiBuilder.Append("── SideA (player)");
-                if (sideAState != null)
-                {
-                    Fp maxE = _scenario?.Config?.SideA?.MaxEnergy ?? Fp.Zero;
-                    _guiBuilder.Append("  E:" + FpDisplay(sideAState.Energy) + "/" + FpInt(maxE));
-                    _guiBuilder.Append("  BaseHP:" + FpDisplay(sideAState.BaseHp));
-                }
-                _guiBuilder.AppendLine(" ─────────────────────");
-
-                // Column header
-                _guiBuilder.AppendLine("    [#] Role       Cost  Cooldown  Pilot");
-
-                if (sideAState != null)
-                {
-                    for (int i = 0; i < sideAState.Slots.Count; i++)
-                    {
-                        SlotState      ss  = sideAState.Slots[i];
-                        SlotDefinition def = FindSlotDef(sideADefs, ss.SlotIndex);
-                        bool           sel = ss.SlotIndex == SelectedSlotIndex;
-                        AppendSlotLine(_guiBuilder, ss, def, sel);
-                    }
-                }
-                _guiBuilder.AppendLine();
-
-                // ── Lanes ─────────────────────────────────────────────────────
-                int laneCount = _scenario?.Config?.Lanes?.Length ?? 0;
-                _guiBuilder.AppendLine(
-                    "── Lanes [Z/X]  (" + (_selectedLaneCursor + 1) + "/" + laneCount + ") ──────────────────────");
-
-                for (int i = 0; i < _lastState.Lanes.Count; i++)
-                {
-                    LaneState lane    = _lastState.Lanes[i];
-                    bool      laneSel = lane.LaneId == SelectedLaneId;
-                    _guiBuilder.Append(laneSel ? " >> " : "    ");
-                    _guiBuilder.Append(lane.LaneId);
-                    if (laneSel) _guiBuilder.Append(" [SEL]");
-                    _guiBuilder.AppendLine("  entities=" + lane.Entities.Count);
-
-                    for (int j = 0; j < lane.Entities.Count; j++)
-                    {
-                        BattleEntity e = lane.Entities[j];
-                        _guiBuilder.AppendLine("      " + e.EntityId
-                            + "  " + (e.Side == BattleSide.SideA ? "A" : "B")
-                            + "  hp=" + FpInt(e.Hp)
-                            + "  pos=" + e.PositionMilli);
-                    }
-                }
-                _guiBuilder.AppendLine();
-
-                // ── SideB ────────────────────────────────────────────────────
-                string autoTag = _sideBAutoController != null
-                    ? (_sideBAutoController.IsEnabled ? "Auto:ON" : "Auto:OFF")
-                    : "Auto:n/a";
-                _guiBuilder.Append("── SideB (opponent)  " + autoTag);
-                if (sideBState != null)
-                {
-                    Fp maxE = _scenario?.Config?.SideB?.MaxEnergy ?? Fp.Zero;
-                    _guiBuilder.Append("  E:" + FpDisplay(sideBState.Energy) + "/" + FpInt(maxE));
-                    _guiBuilder.Append("  BaseHP:" + FpDisplay(sideBState.BaseHp));
-                }
-                _guiBuilder.AppendLine(" ──────────────────");
-
-                // Column header
-                _guiBuilder.AppendLine("    [#] Role       Cost  Cooldown  Pilot");
-
-                if (sideBState != null)
-                {
-                    for (int i = 0; i < sideBState.Slots.Count; i++)
-                    {
-                        SlotState      ss  = sideBState.Slots[i];
-                        SlotDefinition def = FindSlotDef(sideBDefs, ss.SlotIndex);
-                        AppendSlotLine(_guiBuilder, ss, def, false);
-                    }
-                }
-            }
-
-            // ── Result ──────────────────────────────────────────────────────
-            if (_result != null)
-            {
-                _guiBuilder.AppendLine();
-                _guiBuilder.AppendLine("── Result ──────────────────────────────────────────");
-                _guiBuilder.AppendLine("  " + FormatResult(_result));
-            }
-
-            // ── Events ──────────────────────────────────────────────────────
-            _guiBuilder.AppendLine();
-            _guiBuilder.AppendLine("── Events ──────────────────────────────────────────");
-            foreach (string line in _eventLines)
-                _guiBuilder.AppendLine("  " + line);
-
-            return _guiBuilder.ToString();
-        }
-
-        // ------------------------------------------------------------------ slot display helpers
+        // ------------------------------------------------------------------ submitted-command tracking
 
         /// <summary>
-        /// Appends one slot status line.
-        /// Format:  " >> [0] Tank       E:15  cd:  0  pilot:ON"
-        /// Only SideA slots show the ">>" selection marker (<paramref name="isSelected"/>).
-        /// Display-only — reads SlotState and SlotDefinition, never writes simulation state.
+        /// Clears the submitted-command list when the simulator tick has advanced past
+        /// the tick we last recorded.  Safe to call multiple times per tick — it is a
+        /// no-op when the tick has not changed.
         /// </summary>
-        private static void AppendSlotLine(
-            StringBuilder  sb,
-            SlotState      ss,
-            SlotDefinition def,
-            bool           isSelected)
+        private void ResetSubmittedCommandsIfTickChanged()
         {
-            sb.Append(isSelected ? " >> " : "    ");
-            sb.Append("[" + ss.SlotIndex + "] ");
+            if (_simulator == null) return;
+            int currentTick = _simulator.CurrentTick;
+            if (currentTick == _submittedCommandTick) return;
+            _submittedCommandsThisTick.Clear();
+            _submittedCommandTick = currentTick;
+        }
 
-            string name = def != null ? GetSlotRoleName(def.PilotId) : ("Slot" + ss.SlotIndex);
-            sb.Append(name.PadRight(10));
+        /// <summary>Records that <paramref name="cmd"/> was successfully submitted this tick.</summary>
+        private void RecordSubmittedCommand(BattleCommand cmd)
+        {
+            _submittedCommandsThisTick.Add(cmd);
+        }
 
-            if (def != null)
+        /// <summary>
+        /// Returns true if any command for the same <c>Side</c> and <c>SlotIndex</c>
+        /// was already submitted for the current tick.
+        ///
+        /// <c>CommandType</c> is intentionally excluded from the comparison.
+        /// <c>_lastState</c> does not reflect pending-command effects, so Core's slot
+        /// state after the first pending command is unknown here.  Any second command
+        /// targeting the same slot in the same tick risks a cooldown / pilot-state
+        /// violation inside <c>AdvanceTick</c>.  Blocking the entire slot is the safe
+        /// and simple policy.
+        ///
+        /// A <c>SlotIndex</c> &lt; 0 (e.g. a RecallPilot with no lane) is not guarded —
+        /// RecallPilot carries the pilot's current lane internally and is safe to re-try.
+        /// </summary>
+        private bool HasSubmittedSameTickSlotCommand(BattleCommand cmd)
+        {
+            if (cmd.SlotIndex < 0) return false;
+            for (int i = 0; i < _submittedCommandsThisTick.Count; i++)
             {
-                sb.Append("  E:");
-                sb.Append(FpInt(def.EnergyCost).ToString().PadLeft(2));
+                BattleCommand existing = _submittedCommandsThisTick[i];
+                if (existing.Side      == cmd.Side
+                 && existing.SlotIndex == cmd.SlotIndex)
+                    return true;
+            }
+            return false;
+        }
+
+        // ------------------------------------------------------------------ failure dump
+
+        /// <summary>
+        /// Builds a copy-friendly plain-text diagnostic block written to
+        /// <c>Debug.LogError</c> when <c>AdvanceTick</c> throws.
+        /// Includes scenario metadata, tick, submitted commands, slot states,
+        /// lane entity counts, recent events, and the full exception.
+        /// </summary>
+        private string BuildFailureDump(Exception ex)
+        {
+            StringBuilder sb = new StringBuilder(2048);
+            sb.AppendLine("=== DebugBattle AdvanceTick Failure Dump ===");
+            sb.AppendLine("Scenario    : " + (_scenario != null ? _scenario.DisplayName + " [" + _scenario.ScenarioId + "]" : "<none>"));
+            sb.AppendLine("Tick        : " + (_simulator != null ? _simulator.CurrentTick.ToString() : "?"));
+            sb.AppendLine("IsPaused    : " + _isPaused);
+            sb.AppendLine("SideBAuto   : " + (_sideBAutoController != null ? _sideBAutoController.IsEnabled.ToString() : "n/a"));
+            sb.AppendLine();
+
+            // ── Submitted commands this tick ──────────────────────────────────
+            sb.AppendLine("-- Submitted this tick (" + _submittedCommandsThisTick.Count + ") --");
+            if (_submittedCommandsThisTick.Count == 0)
+            {
+                sb.AppendLine("  (none)");
             }
             else
             {
-                sb.Append("  E: -");
+                for (int i = 0; i < _submittedCommandsThisTick.Count; i++)
+                {
+                    BattleCommand c = _submittedCommandsThisTick[i];
+                    sb.AppendLine("  [" + i + "] " + c.Side + " " + c.CommandType
+                        + " slot=" + c.SlotIndex + " lane=" + c.LaneId);
+                }
+            }
+            sb.AppendLine();
+
+            // ── Fixture commands this tick ────────────────────────────────────
+            if (_scenario != null && _simulator != null)
+            {
+                IReadOnlyList<BattleCommand> fixture =
+                    _scenario.GetFixtureCommandsForTick(_simulator.CurrentTick);
+                sb.AppendLine("-- Fixture commands this tick (" + fixture.Count + ") --");
+                if (fixture.Count == 0)
+                {
+                    sb.AppendLine("  (none)");
+                }
+                else
+                {
+                    for (int i = 0; i < fixture.Count; i++)
+                    {
+                        BattleCommand c = fixture[i];
+                        sb.AppendLine("  [" + i + "] " + c.Side + " " + c.CommandType
+                            + " slot=" + c.SlotIndex + " lane=" + c.LaneId);
+                    }
+                }
+                sb.AppendLine();
             }
 
-            sb.Append("  cd:");
-            sb.Append(ss.DroneCooldownTick.ToString().PadLeft(3));
+            // ── Side states ───────────────────────────────────────────────────
+            if (_lastState != null && _scenario != null)
+            {
+                AppendSideDump(sb, _lastState, BattleSide.SideA,
+                    _scenario.InitialState?.SideA?.Slots);
+                AppendSideDump(sb, _lastState, BattleSide.SideB,
+                    _scenario.InitialState?.SideB?.Slots);
+                AppendLaneDump(sb, _lastState);
+            }
+            else
+            {
+                sb.AppendLine("-- LastState: null --");
+                sb.AppendLine();
+            }
 
-            if (ss.IsPilotDeployed)
-                sb.Append("  pilot:ON");
-            else if (ss.IsPilotKnockedOut)
-                sb.Append("  pilot:KO");
-            else if (ss.PilotCooldownTick > 0)
-                sb.Append("  pcd:" + ss.PilotCooldownTick.ToString().PadLeft(3));
+            // ── Recent events ─────────────────────────────────────────────────
+            sb.AppendLine("-- Recent events --");
+            foreach (string line in _eventLines)
+                sb.AppendLine("  " + line);
+            sb.AppendLine();
 
+            // ── Exception ─────────────────────────────────────────────────────
+            sb.AppendLine("-- Exception --");
+            sb.AppendLine(ex.GetType().Name + ": " + ex.Message);
+            sb.AppendLine(ex.StackTrace);
+            sb.AppendLine("=== End Dump ===");
+
+            return sb.ToString();
+        }
+
+        private void AppendSideDump(StringBuilder sb, BattleState state, BattleSide side, SlotDefinition[] defs)
+        {
+            BattleSideState sideState = GetSideState(state, side);
+            string label = side == BattleSide.SideA ? "SideA" : "SideB";
+            sb.AppendLine("-- " + label + " state --");
+            if (sideState == null)
+            {
+                sb.AppendLine("  (null)");
+                sb.AppendLine();
+                return;
+            }
+            sb.AppendLine("  Energy   : " + DebugBattleStatusTextBuilder.FpDisplay(sideState.Energy));
+            sb.AppendLine("  BaseHP   : " + DebugBattleStatusTextBuilder.FpDisplay(sideState.BaseHp));
+            sb.AppendLine("  Slots    : " + sideState.Slots.Count);
+            for (int i = 0; i < sideState.Slots.Count; i++)
+            {
+                SlotState ss  = sideState.Slots[i];
+                string    name = "(unknown)";
+                if (defs != null)
+                {
+                    for (int d = 0; d < defs.Length; d++)
+                        if (defs[d].SlotIndex == ss.SlotIndex)
+                        { name = DebugBattleStatusTextBuilder.GetSlotRoleName(defs[d].PilotId); break; }
+                }
+                sb.AppendLine("    [" + ss.SlotIndex + "] " + name
+                    + "  drone_cd=" + ss.DroneCooldownTick
+                    + "  pilot=" + (ss.IsPilotDeployed ? "ON" : ss.IsPilotKnockedOut ? "KO" : "off")
+                    + (ss.PilotCooldownTick > 0 ? "  pcd=" + ss.PilotCooldownTick : ""));
+            }
             sb.AppendLine();
         }
 
-        /// <summary>
-        /// Derives a human-readable role name from a pilot id string.
-        /// Extracts the last underscore-delimited token and capitalises it.
-        /// Examples: "pilot_a_tank" → "Tank", "pilot_b_bruiser" → "Bruiser",
-        ///           "pilot_high" → "High", "placeholder" → "Placeholder".
-        /// Display-only.
-        /// </summary>
-        private static string GetSlotRoleName(string pilotId)
+        private void AppendLaneDump(StringBuilder sb, BattleState state)
         {
-            if (string.IsNullOrEmpty(pilotId)) return "Unknown";
-            int lastUnderscore = pilotId.LastIndexOf('_');
-            string token = (lastUnderscore >= 0 && lastUnderscore < pilotId.Length - 1)
-                ? pilotId.Substring(lastUnderscore + 1)
-                : pilotId;
-            if (token.Length == 0) return pilotId;
-            return char.ToUpper(token[0]) + (token.Length > 1 ? token.Substring(1) : string.Empty);
-        }
-
-        /// <summary>Finds the SlotDefinition for <paramref name="slotIndex"/> in <paramref name="defs"/>.</summary>
-        private static SlotDefinition FindSlotDef(SlotDefinition[] defs, int slotIndex)
-        {
-            if (defs == null) return null;
-            for (int i = 0; i < defs.Length; i++)
-                if (defs[i].SlotIndex == slotIndex) return defs[i];
-            return null;
-        }
-
-        /// <summary>
-        /// Returns Fp as a "INT.D" string (1 decimal digit).
-        /// E.g. energy 28.5 → "28.5", HP 300 → "300.0".
-        /// Display-only — uses Fp.Raw and Fp.Scale directly.
-        /// </summary>
-        private static string FpDisplay(Fp fp)
-        {
-            if (fp.Raw <= 0L) return "0";
-            long intPart  = fp.Raw / Fp.Scale;
-            long fracPart = (fp.Raw % Fp.Scale) / (Fp.Scale / 10); // single decimal digit
-            return intPart + "." + fracPart;
-        }
-
-        /// <summary>Returns the integer (floor) part of a Fp value. Display-only.</summary>
-        private static int FpInt(Fp fp)
-        {
-            if (fp.Raw <= 0L) return 0;
-            return (int)(fp.Raw / Fp.Scale);
+            sb.AppendLine("-- Lanes --");
+            if (state?.Lanes == null)
+            {
+                sb.AppendLine("  (null)");
+                sb.AppendLine();
+                return;
+            }
+            for (int i = 0; i < state.Lanes.Count; i++)
+            {
+                LaneState lane = state.Lanes[i];
+                sb.Append("  " + lane.LaneId + "  entities=" + lane.Entities.Count);
+                int a = 0, b = 0;
+                for (int j = 0; j < lane.Entities.Count; j++)
+                {
+                    if (lane.Entities[j].Side == BattleSide.SideA) a++;
+                    else b++;
+                }
+                sb.AppendLine("  (A=" + a + " B=" + b + ")");
+            }
+            sb.AppendLine();
         }
 
         // ------------------------------------------------------------------ selection
@@ -611,7 +653,8 @@ namespace FrontierBastion.Client.DebugBattle
             int count = slots.Length;
             _selectedSlotCursor = (_selectedSlotCursor + direction + count) % count;
             AddEvent("Slot >> " + SelectedSlotIndex
-                + " [" + GetSlotRoleName(_scenario.InitialState.SideA.Slots[_selectedSlotCursor].PilotId) + "]"
+                + " [" + DebugBattleStatusTextBuilder.GetSlotRoleName(
+                    _scenario.InitialState.SideA.Slots[_selectedSlotCursor].PilotId) + "]"
                 + "  (" + (_selectedSlotCursor + 1) + "/" + count + ")");
         }
 
@@ -666,18 +709,9 @@ namespace FrontierBastion.Client.DebugBattle
             _eventLines.Enqueue(message);
         }
 
-        private static string FormatResult(BattleResult result)
-        {
-            return "winner=" + result.WinnerSide
-                + " / " + result.EndReason
-                + "  tick=" + result.ClearTimeTick
-                + "  A=" + FpDisplay(result.SideABaseHpRatio)
-                + "  B=" + FpDisplay(result.SideBBaseHpRatio);
-        }
-
         /// <summary>
         /// Returns the local-side (SideA) slot state for <paramref name="slotIndex"/>
-        /// from the last known state snapshot. Used for pre-validation before SubmitCommand.
+        /// from the last known state snapshot. Used for command pre-validation.
         /// </summary>
         private SlotState FindLastSlotState(int slotIndex)
         {
@@ -690,8 +724,8 @@ namespace FrontierBastion.Client.DebugBattle
         }
 
         /// <summary>
-        /// Returns the energy cost for the given slotIndex from the scenario's SideA slot
-        /// definition, or Fp.Zero if not found.
+        /// Returns the energy cost for <paramref name="slotIndex"/> from the scenario's
+        /// SideA slot definition, or <c>Fp.Zero</c> if not found.
         /// </summary>
         private Fp FindSlotEnergyCost(int slotIndex)
         {
@@ -718,7 +752,6 @@ namespace FrontierBastion.Client.DebugBattle
             return null;
         }
 
-        private BattleSideState GetLocalSideState()    => GetSideState(_lastState, LocalSide);
-        private BattleSideState GetOpponentSideState() => GetSideState(_lastState, OpponentSide);
+        private BattleSideState GetLocalSideState() => GetSideState(_lastState, LocalSide);
     }
 }
