@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using BattleSim.Core.Commands;
 using BattleSim.Core.Config;
+using BattleSim.Core.FixedPoint;
 using BattleSim.Core.Results;
 using BattleSim.Core.Simulation;
 using BattleSim.Core.State;
@@ -212,6 +213,11 @@ namespace FrontierBastion.Client.Stage
             ResetSubmittedCommandsIfTickChanged();
             if (HasSubmittedSameTickSlotCommand(cmd)) return;
 
+            // Pre-validate against current state.  Without this, an invalid AI
+            // command (e.g. cooldown not respected) would queue successfully and
+            // then crash AdvanceTick, faulting the entire session.
+            if (PrevalidateApplicable(cmd) != null) return;
+
             try
             {
                 _simulator.SubmitCommand(cmd);
@@ -241,6 +247,13 @@ namespace FrontierBastion.Client.Stage
                     + command.Side + " slot=" + command.SlotIndex
                     + " already submitted this tick";
 
+            // Pre-validate against current state (cooldown / pilot deployed /
+            // pilot knocked out / energy).  Without this, the command would queue
+            // and crash AdvanceTick, faulting the entire session — every subsequent
+            // input would be rejected with "Session faulted".
+            string prevalErr = PrevalidateApplicable(command);
+            if (prevalErr != null) return prevalErr;
+
             try
             {
                 _simulator.SubmitCommand(command);
@@ -251,6 +264,112 @@ namespace FrontierBastion.Client.Stage
             {
                 return ex.Message;
             }
+        }
+
+        // ── Pre-validation (mirrors BattleSimulator.ApplyCommand invariants) ──
+
+        /// <summary>
+        /// Returns null if the command can be applied next AdvanceTick, or a
+        /// rejection reason string otherwise.  Mirrors the checks performed by
+        /// BattleSimulator.ApplySpawnDroneSquad / ApplyDeployPilot / ApplyRecallPilot,
+        /// using <see cref="_lastState"/> for live slot state and
+        /// <see cref="_initialState"/> for slot definitions.
+        ///
+        /// Energy validation also accounts for already-queued spawn commands this
+        /// tick on the same side ("tentative" deduction), so two same-tick spawns
+        /// whose combined cost exceeds available energy are rejected up front.
+        /// </summary>
+        private string PrevalidateApplicable(BattleCommand command)
+        {
+            // First tick (no state yet) — let the simulator handle it.
+            if (_lastState == null) return null;
+
+            BattleSideState sideState = FindSideStateLocal(_lastState, command.Side);
+            if (sideState == null) return "Side state not found: " + command.Side;
+
+            SlotState slot = FindSlotStateLocal(sideState, command.SlotIndex);
+
+            BattleSideInitialState sideInit = command.Side == BattleSide.SideA
+                ? _initialState?.SideA : _initialState?.SideB;
+            SlotDefinition def = FindSlotDefinitionLocal(sideInit, command.SlotIndex);
+
+            switch (command.CommandType)
+            {
+                case BattleCommandType.SpawnDroneSquad:
+                    if (slot == null) return "Slot " + command.SlotIndex + " not found";
+                    if (def  == null) return "Slot definition " + command.SlotIndex + " not found";
+                    if (slot.DroneCooldownTick > 0)
+                        return "Slot " + command.SlotIndex + " drone on cooldown ("
+                             + slot.DroneCooldownTick + " ticks remaining)";
+                    if (slot.IsPilotDeployed)
+                        return "Slot " + command.SlotIndex + " pilot deployed; cannot spawn drone";
+                    Fp tentative = SumTentativeSpawnEnergy(command.Side);
+                    Fp available = sideState.Energy - tentative;
+                    if (available < def.EnergyCost)
+                        return "Insufficient energy: need " + def.EnergyCost
+                             + ", have " + available
+                             + (tentative > Fp.Zero ? " (after pending this tick)" : "");
+                    return null;
+
+                case BattleCommandType.DeployPilot:
+                    if (slot == null) return "Slot " + command.SlotIndex + " not found";
+                    if (slot.IsPilotDeployed)
+                        return "Slot " + command.SlotIndex + " pilot already deployed";
+                    if (slot.IsPilotKnockedOut)
+                        return "Slot " + command.SlotIndex + " pilot knocked out";
+                    return null;
+
+                case BattleCommandType.RecallPilot:
+                    if (slot == null) return "Slot " + command.SlotIndex + " not found";
+                    if (!slot.IsPilotDeployed)
+                        return "Slot " + command.SlotIndex + " pilot not deployed; cannot recall";
+                    return null;
+
+                default:
+                    return null;
+            }
+        }
+
+        private Fp SumTentativeSpawnEnergy(BattleSide side)
+        {
+            BattleSideInitialState sideInit = side == BattleSide.SideA
+                ? _initialState?.SideA : _initialState?.SideB;
+            if (sideInit?.Slots == null) return Fp.Zero;
+
+            Fp total = Fp.Zero;
+            for (int i = 0; i < _submittedCommandsThisTick.Count; i++)
+            {
+                BattleCommand c = _submittedCommandsThisTick[i];
+                if (c.Side != side) continue;
+                if (c.CommandType != BattleCommandType.SpawnDroneSquad) continue;
+                SlotDefinition def = FindSlotDefinitionLocal(sideInit, c.SlotIndex);
+                if (def != null) total = total + def.EnergyCost;
+            }
+            return total;
+        }
+
+        private static BattleSideState FindSideStateLocal(BattleState state, BattleSide side)
+        {
+            if (state?.Sides == null) return null;
+            for (int i = 0; i < state.Sides.Count; i++)
+                if (state.Sides[i].Side == side) return state.Sides[i];
+            return null;
+        }
+
+        private static SlotState FindSlotStateLocal(BattleSideState side, int slotIndex)
+        {
+            if (side?.Slots == null) return null;
+            for (int i = 0; i < side.Slots.Count; i++)
+                if (side.Slots[i].SlotIndex == slotIndex) return side.Slots[i];
+            return null;
+        }
+
+        private static SlotDefinition FindSlotDefinitionLocal(BattleSideInitialState sideInit, int slotIndex)
+        {
+            if (sideInit?.Slots == null) return null;
+            for (int i = 0; i < sideInit.Slots.Length; i++)
+                if (sideInit.Slots[i].SlotIndex == slotIndex) return sideInit.Slots[i];
+            return null;
         }
 
         // ── Same-tick command tracking ────────────────────────────────────────
