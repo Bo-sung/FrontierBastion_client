@@ -187,7 +187,7 @@ namespace FrontierBastion.Client.DebugBattle
                 pilotReturnCooldownTick:      100,
                 pilotKnockoutDroneResumeTick: 50,
                 maxBattleTick: 3,
-                lanes: new[] { new LaneDefinition(LaneGround, LaneType.Ground, 100000) },
+                lanes: new[] { new LaneDefinition(LaneGround, LaneType.Ground, 100000, 0L) },
                 timeOutTieWinnerSide: BattleSide.SideB);   // SideB wins on equal-HP tie
 
             BattleInitialState initial = new BattleInitialState(
@@ -210,7 +210,7 @@ namespace FrontierBastion.Client.DebugBattle
 
         private static LaneDefinition[] CreateSmokeLanes()
         {
-            return new[] { new LaneDefinition(LaneGround, LaneType.Ground, 1000) };
+            return new[] { new LaneDefinition(LaneGround, LaneType.Ground, 1000, 0L) };
         }
 
         // ── SideA slot helpers ────────────────────────────────────────────────
@@ -226,12 +226,16 @@ namespace FrontierBastion.Client.DebugBattle
                 cooldownTick:         5,
                 droneHp:              Fp.FromInt(100),
                 droneAttack:          Fp.FromInt(50),
+                droneDefense:         Fp.Zero,
                 droneRangeMilli:      500,
                 droneSpeedMilliPerTick: 2000,
+                droneAttackPeriodTick: 1,
                 pilotHp:              Fp.FromInt(200),
                 pilotAttack:          Fp.FromInt(20),
+                pilotDefense:         Fp.Zero,
                 pilotRangeMilli:      1000,
-                pilotSpeedMilliPerTick: 300);
+                pilotSpeedMilliPerTick: 300,
+                pilotAttackPeriodTick: 1);
         }
 
         /// <summary>Placeholder slot with zero-attack stats. Used for sides that don't spawn units.</summary>
@@ -245,12 +249,16 @@ namespace FrontierBastion.Client.DebugBattle
                 cooldownTick:         999,
                 droneHp:              Fp.FromInt(1),
                 droneAttack:          Fp.Zero,
+                droneDefense:         Fp.Zero,
                 droneRangeMilli:      0,
                 droneSpeedMilliPerTick: 0,
+                droneAttackPeriodTick: 1,
                 pilotHp:              Fp.FromInt(1),
                 pilotAttack:          Fp.Zero,
+                pilotDefense:         Fp.Zero,
                 pilotRangeMilli:      0,
-                pilotSpeedMilliPerTick: 0);
+                pilotSpeedMilliPerTick: 0,
+                pilotAttackPeriodTick: 1);
         }
 
     }

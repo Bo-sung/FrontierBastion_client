@@ -1,4 +1,4 @@
-﻿using BattleSim.Core.Config;
+using BattleSim.Core.Config;
 using BattleSim.Core.FixedPoint;
 
 namespace FrontierBastion.Client.Stage
@@ -27,14 +27,18 @@ namespace FrontierBastion.Client.Stage
         // ── Drone entity stats ────────────────────────────────────────────────
         public Fp   DroneHp;
         public Fp   DroneAttack;
+        public Fp   DroneDefense;
         public long DroneRangeMilli;
         public long DroneSpeedMilliPerTick;
+        public int  DroneAttackPeriodTick;
 
         // ── Pilot entity stats ────────────────────────────────────────────────
         public Fp   PilotHp;
         public Fp   PilotAttack;
+        public Fp   PilotDefense;
         public long PilotRangeMilli;
         public long PilotSpeedMilliPerTick;
+        public int  PilotAttackPeriodTick;
 
         // ── Conversion ────────────────────────────────────────────────────────
 
@@ -52,12 +56,16 @@ namespace FrontierBastion.Client.Stage
                 cooldownTick:           CooldownTick,
                 droneHp:                DroneHp,
                 droneAttack:            DroneAttack,
+                droneDefense:           DroneDefense,
                 droneRangeMilli:        DroneRangeMilli,
                 droneSpeedMilliPerTick: DroneSpeedMilliPerTick,
+                droneAttackPeriodTick:  DroneAttackPeriodTick,
                 pilotHp:                PilotHp,
                 pilotAttack:            PilotAttack,
+                pilotDefense:           PilotDefense,
                 pilotRangeMilli:        PilotRangeMilli,
-                pilotSpeedMilliPerTick: PilotSpeedMilliPerTick);
+                pilotSpeedMilliPerTick: PilotSpeedMilliPerTick,
+                pilotAttackPeriodTick:  PilotAttackPeriodTick);
         }
     }
 }

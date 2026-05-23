@@ -1,4 +1,4 @@
-﻿using BattleSim.Core.Config;
+using BattleSim.Core.Config;
 using BattleSim.Core.FixedPoint;
 using BattleSim.Core.State;
 
@@ -39,8 +39,8 @@ namespace FrontierBastion.Client.Stage
 
                 Lanes = new[]
                 {
-                    new LaneDefinition(LaneGround, LaneType.Ground, 5000),
-                    new LaneDefinition(LaneAir,    LaneType.Air,    3000),
+                    new LaneDefinition(LaneGround, LaneType.Ground, 5000, 0L),
+                    new LaneDefinition(LaneAir,    LaneType.Air,    3000, 1500L),
                 },
 
                 SideAConfig = new StageSideConfig
@@ -92,12 +92,16 @@ namespace FrontierBastion.Client.Stage
                     CooldownTick           = 12,
                     DroneHp                = Fp.FromInt(180),
                     DroneAttack            = Fp.FromInt(18),
+                    DroneDefense           = Fp.Zero,
                     DroneRangeMilli        = 400,
                     DroneSpeedMilliPerTick = 130,
+                    DroneAttackPeriodTick  = 1,
                     PilotHp                = Fp.FromInt(360),
                     PilotAttack            = Fp.FromInt(28),
+                    PilotDefense           = Fp.Zero,
                     PilotRangeMilli        = 500,
                     PilotSpeedMilliPerTick = 160,
+                    PilotAttackPeriodTick  = 1,
                 },
                 // Slot 1 — Striker: low HP, high attack, fast, expensive.
                 // Glass-cannon burst; melts quickly if met by durable enemies.
@@ -110,12 +114,16 @@ namespace FrontierBastion.Client.Stage
                     CooldownTick           = 20,
                     DroneHp                = Fp.FromInt(60),
                     DroneAttack            = Fp.FromInt(45),
+                    DroneDefense           = Fp.Zero,
                     DroneRangeMilli        = 380,
                     DroneSpeedMilliPerTick = 350,
+                    DroneAttackPeriodTick  = 1,
                     PilotHp                = Fp.FromInt(140),
                     PilotAttack            = Fp.FromInt(60),
+                    PilotDefense           = Fp.Zero,
                     PilotRangeMilli        = 480,
                     PilotSpeedMilliPerTick = 330,
+                    PilotAttackPeriodTick  = 1,
                 },
                 // Slot 2 — Ranger: long range, medium speed, medium cost.
                 // Engages from a safe distance; strong counter to slow enemies.
@@ -128,12 +136,16 @@ namespace FrontierBastion.Client.Stage
                     CooldownTick           = 20,
                     DroneHp                = Fp.FromInt(80),
                     DroneAttack            = Fp.FromInt(28),
+                    DroneDefense           = Fp.Zero,
                     DroneRangeMilli        = 1800,
                     DroneSpeedMilliPerTick = 180,
+                    DroneAttackPeriodTick  = 1,
                     PilotHp                = Fp.FromInt(160),
                     PilotAttack            = Fp.FromInt(35),
+                    PilotDefense           = Fp.Zero,
                     PilotRangeMilli        = 2200,
                     PilotSpeedMilliPerTick = 200,
+                    PilotAttackPeriodTick  = 1,
                 },
                 // Slot 3 — Runner: very fast, very cheap, very weak.
                 // Rushes past combat to deal base damage; highly expendable.
@@ -146,12 +158,16 @@ namespace FrontierBastion.Client.Stage
                     CooldownTick           = 10,
                     DroneHp                = Fp.FromInt(50),
                     DroneAttack            = Fp.FromInt(10),
+                    DroneDefense           = Fp.Zero,
                     DroneRangeMilli        = 300,
                     DroneSpeedMilliPerTick = 450,
+                    DroneAttackPeriodTick  = 1,
                     PilotHp                = Fp.FromInt(100),
                     PilotAttack            = Fp.FromInt(15),
+                    PilotDefense           = Fp.Zero,
                     PilotRangeMilli        = 380,
                     PilotSpeedMilliPerTick = 420,
+                    PilotAttackPeriodTick  = 1,
                 },
             };
         }
@@ -179,12 +195,16 @@ namespace FrontierBastion.Client.Stage
                     CooldownTick           = 45,
                     DroneHp                = Fp.FromInt(160),
                     DroneAttack            = Fp.FromInt(20),
+                    DroneDefense           = Fp.Zero,
                     DroneRangeMilli        = 380,
                     DroneSpeedMilliPerTick = 110,
+                    DroneAttackPeriodTick  = 1,
                     PilotHp                = Fp.FromInt(280),
                     PilotAttack            = Fp.FromInt(28),
+                    PilotDefense           = Fp.Zero,
                     PilotRangeMilli        = 480,
                     PilotSpeedMilliPerTick = 130,
+                    PilotAttackPeriodTick  = 1,
                 },
                 // Slot 1 — Shooter: low-mid HP, high attack, very long range, medium speed.
                 // Engages SideA units before they close to melee range.
@@ -197,12 +217,16 @@ namespace FrontierBastion.Client.Stage
                     CooldownTick           = 55,
                     DroneHp                = Fp.FromInt(80),
                     DroneAttack            = Fp.FromInt(30),
+                    DroneDefense           = Fp.Zero,
                     DroneRangeMilli        = 2000,
                     DroneSpeedMilliPerTick = 160,
+                    DroneAttackPeriodTick  = 1,
                     PilotHp                = Fp.FromInt(140),
                     PilotAttack            = Fp.FromInt(38),
+                    PilotDefense           = Fp.Zero,
                     PilotRangeMilli        = 2400,
                     PilotSpeedMilliPerTick = 180,
+                    PilotAttackPeriodTick  = 1,
                 },
                 // Slot 2 — Swarm: very low HP and attack, fast, very cheap.
                 // Numbers game; overwhelms through quantity when energy permits.
@@ -215,12 +239,16 @@ namespace FrontierBastion.Client.Stage
                     CooldownTick           = 25,
                     DroneHp                = Fp.FromInt(45),
                     DroneAttack            = Fp.FromInt(8),
+                    DroneDefense           = Fp.Zero,
                     DroneRangeMilli        = 300,
                     DroneSpeedMilliPerTick = 380,
+                    DroneAttackPeriodTick  = 1,
                     PilotHp                = Fp.FromInt(80),
                     PilotAttack            = Fp.FromInt(12),
+                    PilotDefense           = Fp.Zero,
                     PilotRangeMilli        = 380,
                     PilotSpeedMilliPerTick = 360,
+                    PilotAttackPeriodTick  = 1,
                 },
                 // Slot 3 — Raider: low-mid HP, medium attack, very fast.
                 // Breakthrough rush; aims to reach the SideA base before interception.
@@ -233,12 +261,16 @@ namespace FrontierBastion.Client.Stage
                     CooldownTick           = 40,
                     DroneHp                = Fp.FromInt(90),
                     DroneAttack            = Fp.FromInt(22),
+                    DroneDefense           = Fp.Zero,
                     DroneRangeMilli        = 420,
                     DroneSpeedMilliPerTick = 320,
+                    DroneAttackPeriodTick  = 1,
                     PilotHp                = Fp.FromInt(160),
                     PilotAttack            = Fp.FromInt(30),
+                    PilotDefense           = Fp.Zero,
                     PilotRangeMilli        = 500,
                     PilotSpeedMilliPerTick = 300,
+                    PilotAttackPeriodTick  = 1,
                 },
             };
         }
