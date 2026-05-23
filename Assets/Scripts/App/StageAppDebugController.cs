@@ -23,6 +23,7 @@ namespace FrontierBastion.Client.App
         private string               _lastInputError;
         private float                _errorDisplayTimeLeft;
         private StageBattleWorldView _worldView;
+        private bool                 _lastFaultedReported;
 
         private void Start()
         {
@@ -149,6 +150,19 @@ namespace FrontierBastion.Client.App
 
         private void LateUpdate()
         {
+            // Fault-once dump: first frame the session enters faulted state,
+            // dump LastFailureDump to the console for diagnosis.
+            StageBattleSession s = _battleManager != null ? _battleManager.LastSession : null;
+            if (s != null && s.IsFaulted && !_lastFaultedReported)
+            {
+                _lastFaultedReported = true;
+                Debug.LogError("[DebugBridge] StageBattleSession FAULTED. Dump follows:\n" + s.LastFailureDump);
+            }
+            else if (s != null && !s.IsFaulted && _lastFaultedReported)
+            {
+                _lastFaultedReported = false; // session restarted
+            }
+
             if (_worldView == null) return;
 
             if (_battleManager?.CurrentConfig != null && _battleManager.LastSession != null)
