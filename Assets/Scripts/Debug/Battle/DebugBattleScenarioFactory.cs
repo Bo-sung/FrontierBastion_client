@@ -4,6 +4,7 @@ using BattleSim.Core.Config;
 using BattleSim.Core.FixedPoint;
 using BattleSim.Core.Results;
 using BattleSim.Core.State;
+using FrontierBastion.Client.Stage;
 
 namespace FrontierBastion.Client.DebugBattle
 {
@@ -125,62 +126,35 @@ namespace FrontierBastion.Client.DebugBattle
         // ── F3 ───────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Interactive sandbox: 2 lanes, 2 SideA slots, SideB driven by auto controller.
+        /// Interactive sandbox: 2 lanes, 4 SideA slots, SideB driven by auto controller.
         /// SideB has no scripted fixture commands — spawning is handled entirely by
         /// <see cref="DebugBattleSideBAutoController"/> in the runner (A key to toggle).
         /// SideA controlled manually (1=drone, 2=pilot, R=recall).
+        ///
+        /// Stage config and both decks are now sourced from the Stage data model:
+        ///   <see cref="StagePrototypeCatalog.CreateInteractiveSandboxStage"/>
+        ///   <see cref="StagePrototypeCatalog.CreateSideAPrototypeDeck"/>
+        ///   <see cref="StageBattleDefinitionBuilder"/>
         /// </summary>
         public static DebugBattleScenario CreateInteractiveSandbox()
         {
-            BattleConfigSnapshot config = new BattleConfigSnapshot(
-                configVersion: "debug_interactive_v3",
-                sideA: new BattleSideConfig(
-                    BattleSide.SideA,
-                    baseInitialHp:      Fp.FromInt(300),
-                    initialEnergy:      Fp.FromInt(70),   // enough to try most slots immediately
-                    maxEnergy:          Fp.FromInt(120),  // raised so expensive combos are viable
-                    energyRegenPerTick: Fp.FromFraction(6, 10)),
-                sideB: new BattleSideConfig(
-                    BattleSide.SideB,
-                    baseInitialHp:      Fp.FromInt(300),
-                    initialEnergy:      Fp.FromInt(40),   // quick first burst then steady-state
-                    maxEnergy:          Fp.FromInt(100),
-                    energyRegenPerTick: Fp.FromFraction(5, 10)),
-                pilotDeployCooldownTick:      200,
-                pilotReturnCooldownTick:      100,
-                pilotKnockoutDroneResumeTick: 50,
-                maxBattleTick: 600,
-                lanes: new[]
-                {
-                    new LaneDefinition(LaneGround, LaneType.Ground, 5000),
-                    new LaneDefinition(LaneAir,    LaneType.Air,    3000),
-                });
+            StageDefinition  stage     = StagePrototypeCatalog.CreateInteractiveSandboxStage();
+            TroopCardData[]  sideADeck = StagePrototypeCatalog.CreateSideAPrototypeDeck();
 
-            BattleInitialState initial = new BattleInitialState(
-                stageId: "debug_interactive",
-                rngSeed: 99,
-                sideA: new BattleSideInitialState(BattleSide.SideA, new[]
-                {
-                    CreateSideATankSlot(),     // slot 0 — Tank:    durable, slow, cheap
-                    CreateSideAStrikerSlot(),  // slot 1 — Striker: fragile, fast, high damage
-                    CreateSideARangerSlot(),   // slot 2 — Ranger:  long range, medium speed
-                    CreateSideARunnerSlot(),   // slot 3 — Runner:  very fast, very cheap, weak
-                }),
-                sideB: new BattleSideInitialState(BattleSide.SideB, new[]
-                {
-                    CreateSideBBruiserSlot(),  // slot 0 — Bruiser: durable pressure
-                    CreateSideBShooterSlot(),  // slot 1 — Shooter: long-range pressure
-                    CreateSideBSwarmSlot(),    // slot 2 — Swarm:   cheap, fast, expendable
-                    CreateSideBRaiderSlot(),   // slot 3 — Raider:  fast breakthrough
-                }));
+            BattleConfigSnapshot config  = StageBattleDefinitionBuilder.BuildConfig(stage);
+            BattleInitialState   initial = StageBattleDefinitionBuilder.BuildInitialState(stage, sideADeck);
 
             // No SideB scripted fixture commands — the auto controller handles SideB spawning.
             // SideA fixture commands could be added here for guided tutorial scenarios.
             var commandsByTick = new Dictionary<int, BattleCommand[]>();
 
+            // NOTE: The scenarioId "interactive_sandbox" is the debug-runner's detection key
+            // (DebugBattleRunner.ResetToScenario checks this string to enable SideB Auto).
+            // stage.StageId ("debug_interactive") is the simulation seed identifier used by
+            // BattleInitialState, and is intentionally different — do not conflate the two.
             return new DebugBattleScenario(
                 "interactive_sandbox",
-                "Interactive Sandbox",
+                stage.DisplayName,
                 config, initial, commandsByTick,
                 expectedWinnerSide:    null,   // no expectation — interactive
                 expectedEndReason:     null,
@@ -279,192 +253,5 @@ namespace FrontierBastion.Client.DebugBattle
                 pilotSpeedMilliPerTick: 0);
         }
 
-        // ── SideA slot helpers (F3) ──────────────────────────────────────────
-
-        /// <summary>
-        /// F3 SideA Slot 0 — Tank.
-        /// High HP, low attack, short range, slow, cheap.
-        /// Designed for sustained front-line presence on ground lanes.
-        /// </summary>
-        private static SlotDefinition CreateSideATankSlot()
-        {
-            return new SlotDefinition(
-                slotIndex:              0,
-                pilotId:                "pilot_a_tank",
-                droneSquadId:           "drone_a_tank",
-                energyCost:             Fp.FromInt(15),
-                cooldownTick:           12,
-                droneHp:                Fp.FromInt(180),
-                droneAttack:            Fp.FromInt(18),
-                droneRangeMilli:        400,
-                droneSpeedMilliPerTick: 130,
-                pilotHp:                Fp.FromInt(360),
-                pilotAttack:            Fp.FromInt(28),
-                pilotRangeMilli:        500,
-                pilotSpeedMilliPerTick: 160);
-        }
-
-        /// <summary>
-        /// F3 SideA Slot 1 — Striker.
-        /// Low HP, high attack, medium range, fast, expensive.
-        /// Glass-cannon burst; melts quickly if met by durable enemies.
-        /// </summary>
-        private static SlotDefinition CreateSideAStrikerSlot()
-        {
-            return new SlotDefinition(
-                slotIndex:              1,
-                pilotId:                "pilot_a_striker",
-                droneSquadId:           "drone_a_striker",
-                energyCost:             Fp.FromInt(25),
-                cooldownTick:           20,
-                droneHp:                Fp.FromInt(60),
-                droneAttack:            Fp.FromInt(45),
-                droneRangeMilli:        380,
-                droneSpeedMilliPerTick: 350,
-                pilotHp:                Fp.FromInt(140),
-                pilotAttack:            Fp.FromInt(60),
-                pilotRangeMilli:        480,
-                pilotSpeedMilliPerTick: 330);
-        }
-
-        /// <summary>
-        /// F3 SideA Slot 2 — Ranger.
-        /// Low-mid HP, medium attack, very long range, medium speed, medium cost.
-        /// Engages from a safe distance; strong counter to slow enemies.
-        /// </summary>
-        private static SlotDefinition CreateSideARangerSlot()
-        {
-            return new SlotDefinition(
-                slotIndex:              2,
-                pilotId:                "pilot_a_ranger",
-                droneSquadId:           "drone_a_ranger",
-                energyCost:             Fp.FromInt(22),
-                cooldownTick:           20,
-                droneHp:                Fp.FromInt(80),
-                droneAttack:            Fp.FromInt(28),
-                droneRangeMilli:        1800,
-                droneSpeedMilliPerTick: 180,
-                pilotHp:                Fp.FromInt(160),
-                pilotAttack:            Fp.FromInt(35),
-                pilotRangeMilli:        2200,
-                pilotSpeedMilliPerTick: 200);
-        }
-
-        /// <summary>
-        /// F3 SideA Slot 3 — Runner.
-        /// Very low HP and attack, short range, very fast, cheap.
-        /// Rushes past combat to deal base damage; highly expendable.
-        /// </summary>
-        private static SlotDefinition CreateSideARunnerSlot()
-        {
-            return new SlotDefinition(
-                slotIndex:              3,
-                pilotId:                "pilot_a_runner",
-                droneSquadId:           "drone_a_runner",
-                energyCost:             Fp.FromInt(10),
-                cooldownTick:           10,
-                droneHp:                Fp.FromInt(50),
-                droneAttack:            Fp.FromInt(10),
-                droneRangeMilli:        300,
-                droneSpeedMilliPerTick: 450,
-                pilotHp:                Fp.FromInt(100),
-                pilotAttack:            Fp.FromInt(15),
-                pilotRangeMilli:        380,
-                pilotSpeedMilliPerTick: 420);
-        }
-
-        // ── SideB slot helpers (F3) ──────────────────────────────────────────
-
-        /// <summary>
-        /// F3 SideB Slot 0 — Bruiser.
-        /// High HP, medium attack, short range, slow.
-        /// Durable front-line pressure; soaks SideA hits while grinding forward.
-        /// </summary>
-        private static SlotDefinition CreateSideBBruiserSlot()
-        {
-            return new SlotDefinition(
-                slotIndex:              0,
-                pilotId:                "pilot_b_bruiser",
-                droneSquadId:           "drone_b_bruiser",
-                energyCost:             Fp.FromInt(14),
-                cooldownTick:           45,
-                droneHp:                Fp.FromInt(160),
-                droneAttack:            Fp.FromInt(20),
-                droneRangeMilli:        380,
-                droneSpeedMilliPerTick: 110,
-                pilotHp:                Fp.FromInt(280),
-                pilotAttack:            Fp.FromInt(28),
-                pilotRangeMilli:        480,
-                pilotSpeedMilliPerTick: 130);
-        }
-
-        /// <summary>
-        /// F3 SideB Slot 1 — Shooter.
-        /// Low-mid HP, medium-high attack, very long range, medium speed.
-        /// Engages SideA units before they close to melee range.
-        /// </summary>
-        private static SlotDefinition CreateSideBShooterSlot()
-        {
-            return new SlotDefinition(
-                slotIndex:              1,
-                pilotId:                "pilot_b_shooter",
-                droneSquadId:           "drone_b_shooter",
-                energyCost:             Fp.FromInt(20),
-                cooldownTick:           55,
-                droneHp:                Fp.FromInt(80),
-                droneAttack:            Fp.FromInt(30),
-                droneRangeMilli:        2000,
-                droneSpeedMilliPerTick: 160,
-                pilotHp:                Fp.FromInt(140),
-                pilotAttack:            Fp.FromInt(38),
-                pilotRangeMilli:        2400,
-                pilotSpeedMilliPerTick: 180);
-        }
-
-        /// <summary>
-        /// F3 SideB Slot 2 — Swarm.
-        /// Very low HP and attack, short range, fast, very cheap.
-        /// Numbers game; overwhelms through quantity when energy permits.
-        /// </summary>
-        private static SlotDefinition CreateSideBSwarmSlot()
-        {
-            return new SlotDefinition(
-                slotIndex:              2,
-                pilotId:                "pilot_b_swarm",
-                droneSquadId:           "drone_b_swarm",
-                energyCost:             Fp.FromInt(9),
-                cooldownTick:           25,
-                droneHp:                Fp.FromInt(45),
-                droneAttack:            Fp.FromInt(8),
-                droneRangeMilli:        300,
-                droneSpeedMilliPerTick: 380,
-                pilotHp:                Fp.FromInt(80),
-                pilotAttack:            Fp.FromInt(12),
-                pilotRangeMilli:        380,
-                pilotSpeedMilliPerTick: 360);
-        }
-
-        /// <summary>
-        /// F3 SideB Slot 3 — Raider.
-        /// Low-mid HP, medium attack, short-mid range, very fast.
-        /// Breakthrough rush; aims to reach the SideA base before interception.
-        /// </summary>
-        private static SlotDefinition CreateSideBRaiderSlot()
-        {
-            return new SlotDefinition(
-                slotIndex:              3,
-                pilotId:                "pilot_b_raider",
-                droneSquadId:           "drone_b_raider",
-                energyCost:             Fp.FromInt(16),
-                cooldownTick:           40,
-                droneHp:                Fp.FromInt(90),
-                droneAttack:            Fp.FromInt(22),
-                droneRangeMilli:        420,
-                droneSpeedMilliPerTick: 320,
-                pilotHp:                Fp.FromInt(160),
-                pilotAttack:            Fp.FromInt(30),
-                pilotRangeMilli:        500,
-                pilotSpeedMilliPerTick: 300);
-        }
     }
 }
