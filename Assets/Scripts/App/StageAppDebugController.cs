@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
 using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -18,15 +18,17 @@ namespace FrontierBastion.Client.App
     /// </summary>
     public sealed class StageAppDebugController : MonoBehaviour
     {
-        private StageBattleManager _battleManager;
-        private StageDataManager   _stageData;
-        private string             _lastInputError;
-        private float              _errorDisplayTimeLeft;
+        private StageBattleManager   _battleManager;
+        private StageDataManager     _stageData;
+        private string               _lastInputError;
+        private float                _errorDisplayTimeLeft;
+        private StageBattleWorldView _worldView;
 
         private void Start()
         {
             _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindFirstObjectByType<StageBattleManager>();
             _stageData     = AppRoot.Instance != null ? AppRoot.Instance.StageData : FindFirstObjectByType<StageDataManager>();
+            _worldView     = StageBattleWorldView.GetOrCreate(gameObject);
         }
 
         private static bool KeyPressed(Key key)
@@ -142,6 +144,25 @@ namespace FrontierBastion.Client.App
                 {
                     _lastInputError = null;
                 }
+            }
+        }
+
+        private void LateUpdate()
+        {
+            if (_worldView == null) return;
+
+            if (_battleManager?.CurrentConfig != null && _battleManager.LastSession != null)
+            {
+                _worldView.Render(
+                    _battleManager.CurrentConfig.Lanes,
+                    _battleManager.LastSession.LastState,
+                    _battleManager.CurrentConfig.SideA.BaseInitialHp,
+                    _battleManager.CurrentConfig.SideB.BaseInitialHp,
+                    _battleManager.CurrentConfig.TimeOutTieWinnerSide);
+            }
+            else
+            {
+                _worldView.Render(null, null, Fp.Zero, Fp.Zero, BattleSide.SideB);
             }
         }
 
