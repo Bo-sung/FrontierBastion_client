@@ -64,20 +64,6 @@ namespace FrontierBastion.Client.DebugBattle
         private int                    _submittedCommandTick  = -1;
         private readonly List<BattleCommand> _submittedCommandsThisTick = new List<BattleCommand>(8);
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void AutoCreateInDebugBuilds()
-        {
-            if (!Application.isEditor && !Debug.isDebugBuild)
-                return;
-
-            if (FindFirstObjectByType<DebugBattleRunner>() != null)
-                return;
-
-            GameObject runnerObject = new GameObject("Debug Battle Runner");
-            runnerObject.AddComponent<DebugBattleRunner>();
-            DontDestroyOnLoad(runnerObject);
-        }
-
         private void Awake()
         {
             _worldView = DebugBattleWorldView.GetOrCreate(gameObject);
