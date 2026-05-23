@@ -1,5 +1,6 @@
 using FrontierBastion.Client.Stage;
 using UnityEngine;
+using BattleSim.Core.Config;
 
 namespace FrontierBastion.Client.App
 {
@@ -15,6 +16,9 @@ namespace FrontierBastion.Client.App
 
         /// <summary>The most recently started session, or null if none.</summary>
         public StageBattleSession LastSession { get; private set; }
+
+        /// <summary>The config snapshot for the current session, or null if none.</summary>
+        public BattleConfigSnapshot CurrentConfig => LastSession?.Config;
 
         /// <summary>Set true to suspend automatic ticking without destroying the session.</summary>
         public bool IsPaused { get; set; }

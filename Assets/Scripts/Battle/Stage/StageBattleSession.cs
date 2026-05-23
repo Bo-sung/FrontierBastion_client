@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using BattleSim.Core.Commands;
@@ -68,6 +68,7 @@ namespace FrontierBastion.Client.Stage
         public bool         IsTerminated    => _simulator?.IsTerminated ?? false;
         public int          CurrentTick     => _simulator?.CurrentTick  ?? 0;
         public string       StageId         => _stage?.StageId;
+        public BattleConfigSnapshot Config  => _config;
 
         /// <summary>
         /// True after AdvanceTick threw an unhandled exception.
