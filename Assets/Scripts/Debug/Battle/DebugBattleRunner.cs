@@ -70,7 +70,7 @@ namespace FrontierBastion.Client.DebugBattle
             if (!Application.isEditor && !Debug.isDebugBuild)
                 return;
 
-            if (FindObjectOfType<DebugBattleRunner>() != null)
+            if (FindFirstObjectByType<DebugBattleRunner>() != null)
                 return;
 
             GameObject runnerObject = new GameObject("Debug Battle Runner");

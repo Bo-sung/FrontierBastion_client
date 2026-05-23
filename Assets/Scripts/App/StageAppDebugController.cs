@@ -1,6 +1,7 @@
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+﻿#if UNITY_EDITOR || DEVELOPMENT_BUILD
 using System;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using FrontierBastion.Client.Stage;
 using BattleSim.Core.State;
 using BattleSim.Core.FixedPoint;
@@ -24,8 +25,14 @@ namespace FrontierBastion.Client.App
 
         private void Start()
         {
-            _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindObjectOfType<StageBattleManager>();
-            _stageData     = AppRoot.Instance != null ? AppRoot.Instance.StageData : FindObjectOfType<StageDataManager>();
+            _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindFirstObjectByType<StageBattleManager>();
+            _stageData     = AppRoot.Instance != null ? AppRoot.Instance.StageData : FindFirstObjectByType<StageDataManager>();
+        }
+
+        private static bool KeyPressed(Key key)
+        {
+            Keyboard kb = Keyboard.current;
+            return kb != null && kb[key].wasPressedThisFrame;
         }
 
         private void Update()
@@ -33,7 +40,7 @@ namespace FrontierBastion.Client.App
             if (_battleManager == null || _stageData == null) return;
 
             // F6: Start Interactive Sandbox Battle
-            if (Input.GetKeyDown(KeyCode.F6))
+            if (KeyPressed(Key.F6))
             {
                 var stage = StagePrototypeCatalog.CreateInteractiveSandboxStage();
                 var deck  = StagePrototypeCatalog.CreateSideAPrototypeDeck();
@@ -42,19 +49,19 @@ namespace FrontierBastion.Client.App
             }
 
             // A: Toggle Opponent Auto AI
-            if (Input.GetKeyDown(KeyCode.A))
+            if (KeyPressed(Key.A))
             {
                 _battleManager.ToggleOpponentAuto();
             }
 
             // Space: Toggle Pause/Resume
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (KeyPressed(Key.Space))
             {
                 _battleManager.IsPaused = !_battleManager.IsPaused;
             }
 
             // T: Manual Step (if paused)
-            if (Input.GetKeyDown(KeyCode.T))
+            if (KeyPressed(Key.T))
             {
                 if (_battleManager.IsPaused)
                 {
@@ -64,10 +71,10 @@ namespace FrontierBastion.Client.App
 
             // 1..4: Spawn Drone Squad for slot 0..3 in its default lane
             int spawnSlot = -1;
-            if (Input.GetKeyDown(KeyCode.Alpha1)) spawnSlot = 0;
-            else if (Input.GetKeyDown(KeyCode.Alpha2)) spawnSlot = 1;
-            else if (Input.GetKeyDown(KeyCode.Alpha3)) spawnSlot = 2;
-            else if (Input.GetKeyDown(KeyCode.Alpha4)) spawnSlot = 3;
+            if (KeyPressed(Key.Digit1)) spawnSlot = 0;
+            else if (KeyPressed(Key.Digit2)) spawnSlot = 1;
+            else if (KeyPressed(Key.Digit3)) spawnSlot = 2;
+            else if (KeyPressed(Key.Digit4)) spawnSlot = 3;
 
             if (spawnSlot != -1)
             {
@@ -86,10 +93,10 @@ namespace FrontierBastion.Client.App
 
             // Q..R: Deploy Pilot for slot 0..3 in its default lane
             int deploySlot = -1;
-            if (Input.GetKeyDown(KeyCode.Q)) deploySlot = 0;
-            else if (Input.GetKeyDown(KeyCode.W)) deploySlot = 1;
-            else if (Input.GetKeyDown(KeyCode.E)) deploySlot = 2;
-            else if (Input.GetKeyDown(KeyCode.R)) deploySlot = 3;
+            if (KeyPressed(Key.Q)) deploySlot = 0;
+            else if (KeyPressed(Key.W)) deploySlot = 1;
+            else if (KeyPressed(Key.E)) deploySlot = 2;
+            else if (KeyPressed(Key.R)) deploySlot = 3;
 
             if (deploySlot != -1)
             {
@@ -108,10 +115,10 @@ namespace FrontierBastion.Client.App
 
             // Z..V: Recall Pilot for slot 0..3
             int recallSlot = -1;
-            if (Input.GetKeyDown(KeyCode.Z)) recallSlot = 0;
-            else if (Input.GetKeyDown(KeyCode.X)) recallSlot = 1;
-            else if (Input.GetKeyDown(KeyCode.C)) recallSlot = 2;
-            else if (Input.GetKeyDown(KeyCode.V)) recallSlot = 3;
+            if (KeyPressed(Key.Z)) recallSlot = 0;
+            else if (KeyPressed(Key.X)) recallSlot = 1;
+            else if (KeyPressed(Key.C)) recallSlot = 2;
+            else if (KeyPressed(Key.V)) recallSlot = 3;
 
             if (recallSlot != -1)
             {
@@ -239,9 +246,9 @@ namespace FrontierBastion.Client.App
             else if (session.IsTerminated)
             {
                 BattleResult res = session.Result;
-                string winColor = res.Winner == BattleSide.SideA ? "green" : "red";
+                string winColor = res.WinnerSide == BattleSide.SideA ? "green" : "red";
                 GUI.Label(new Rect(20, y, 290, 20), $"<b>*** BATTLE OVER ***</b>", style); y += lineOffset;
-                GUI.Label(new Rect(20, y, 290, 20), $"Winner: <color={winColor}><b>{res.Winner}</b></color> (Reason: {res.EndReason})", style); y += lineOffset;
+                GUI.Label(new Rect(20, y, 290, 20), $"Winner: <color={winColor}><b>{res.WinnerSide}</b></color> (Reason: {res.EndReason})", style); y += lineOffset;
             }
             else
             {
