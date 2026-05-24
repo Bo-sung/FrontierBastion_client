@@ -25,6 +25,10 @@ namespace FrontierBastion.Client.App
         private StageBattleWorldView _worldView;
         private bool                 _lastFaultedReported;
 
+        private string               _selectedGroundLane = "lane_ground_1";
+        private readonly Queue<string> _recentEventLines = new Queue<string>();
+        private int                  _lastProcessedEventTick = -1;
+
         private void Start()
         {
             _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindFirstObjectByType<StageBattleManager>();
@@ -57,6 +61,12 @@ namespace FrontierBastion.Client.App
                 _battleManager.ToggleOpponentAuto();
             }
 
+            // L: Toggle Selected Ground Lane
+            if (KeyPressed(Key.L))
+            {
+                _selectedGroundLane = StagePrototypeCatalog.GetGroundLaneToggle(_selectedGroundLane);
+            }
+
             // Space: Toggle Pause/Resume
             if (KeyPressed(Key.Space))
             {
@@ -72,7 +82,7 @@ namespace FrontierBastion.Client.App
                 }
             }
 
-            // 1..4: Spawn Drone Squad for slot 0..3 in its default lane
+            // 1..4: Spawn Drone Squad for slot 0..3
             int spawnSlot = -1;
             if (KeyPressed(Key.Digit1)) spawnSlot = 0;
             else if (KeyPressed(Key.Digit2)) spawnSlot = 1;
@@ -81,7 +91,7 @@ namespace FrontierBastion.Client.App
 
             if (spawnSlot != -1)
             {
-                string laneId = StagePrototypeCatalog.GetDefaultLaneId(spawnSlot);
+                string laneId = (spawnSlot == 3) ? StagePrototypeCatalog.GetDefaultLaneId(spawnSlot) : _selectedGroundLane;
                 string err    = _battleManager.SubmitSpawnDroneSquad(spawnSlot, laneId);
                 if (err != null)
                 {
@@ -94,7 +104,7 @@ namespace FrontierBastion.Client.App
                 }
             }
 
-            // Q..R: Deploy Pilot for slot 0..3 in its default lane
+            // Q..R: Deploy Pilot for slot 0..3
             int deploySlot = -1;
             if (KeyPressed(Key.Q)) deploySlot = 0;
             else if (KeyPressed(Key.W)) deploySlot = 1;
@@ -103,7 +113,7 @@ namespace FrontierBastion.Client.App
 
             if (deploySlot != -1)
             {
-                string laneId = StagePrototypeCatalog.GetDefaultLaneId(deploySlot);
+                string laneId = (deploySlot == 3) ? StagePrototypeCatalog.GetDefaultLaneId(deploySlot) : _selectedGroundLane;
                 string err    = _battleManager.SubmitDeployPilot(deploySlot, laneId);
                 if (err != null)
                 {
@@ -163,6 +173,31 @@ namespace FrontierBastion.Client.App
                 _lastFaultedReported = false; // session restarted
             }
 
+            if (s != null && s.LastState != null)
+            {
+                if (s.LastState.CurrentTick < _lastProcessedEventTick || s.LastState.CurrentTick <= 0)
+                {
+                    _recentEventLines.Clear();
+                }
+
+                if (s.LastState.CurrentTick != _lastProcessedEventTick)
+                {
+                    _lastProcessedEventTick = s.LastState.CurrentTick;
+                    if (s.LastState.RecentEvents != null)
+                    {
+                        foreach (var evt in s.LastState.RecentEvents)
+                        {
+                            string line = $"T{evt.Tick} #{evt.Sequence} {evt.EventType} src={evt.SourceEntityId} tgt={evt.TargetEntityId} lane={evt.LaneId} dmg={evt.DamageAmount}";
+                            _recentEventLines.Enqueue(line);
+                            while (_recentEventLines.Count > 12)
+                            {
+                                _recentEventLines.Dequeue();
+                            }
+                        }
+                    }
+                }
+            }
+
             if (_worldView == null) return;
 
             if (_battleManager?.CurrentConfig != null && _battleManager.LastSession != null)
@@ -193,7 +228,7 @@ namespace FrontierBastion.Client.App
             StageBattleSession session = _battleManager.LastSession;
 
             // Make the box look neat and tidy.
-            GUI.Box(new Rect(10, 10, 310, 480), "FB BATTLE CORE v0.4 DEBUG BRIDGE");
+            GUI.Box(new Rect(10, 10, 310, 480), "FB BATTLE CORE v0.5+v0.7 DEBUG BRIDGE");
 
             var style = new GUIStyle(GUI.skin.label);
             style.fontSize = 11;
@@ -204,7 +239,7 @@ namespace FrontierBastion.Client.App
 
             if (session == null)
             {
-                GUI.Label(new Rect(20, y, 290, 40), "<color=orange>Press [F6] to start custom\nInteractive Sandbox Stage (v0.4)</color>", style);
+                GUI.Label(new Rect(20, y, 290, 40), "<color=orange>Press [F6] to start custom\nInteractive Sandbox Stage (v0.5+v0.7)</color>", style);
                 return;
             }
 
@@ -287,7 +322,16 @@ namespace FrontierBastion.Client.App
             }
             else
             {
-                GUI.Label(new Rect(20, y, 290, 40), "<color=grey>Controls:\n[1..4]: Spawn Drones | [Q..R]: Pilot | [Z..V]: Recall\n[Space]: Pause/Resume | [A]: Auto Opponent</color>", style);
+                GUI.Label(new Rect(20, y, 290, 50), $"<color=grey>Controls:\n[1..4]: Spawn Drones | [Q..R]: Pilot | [Z..V]: Recall\n[Space]: Pause/Resume | [A]: Auto Opponent\n[L]: Ground Lane Toggle (current: {_selectedGroundLane})</color>", style);
+            }
+
+            // Recent Events overlay box
+            GUI.Box(new Rect(10, 500, 310, 200), "Recent Events");
+            float eventY = 525f;
+            foreach (var evtLine in _recentEventLines)
+            {
+                GUI.Label(new Rect(20, eventY, 290, 20), evtLine, style);
+                eventY += 14f;
             }
         }
     }
