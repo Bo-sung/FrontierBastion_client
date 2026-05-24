@@ -15,17 +15,28 @@ namespace FrontierBastion.Client.Stage
     /// </summary>
     public static class StagePrototypeCatalog
     {
-        // Lane ID constants — must match DebugBattleScenarioFactory.Lane* constants.
-        public const string LaneGround = "lane_ground";
-        public const string LaneAir    = "lane_air";
+        // Lane ID constants
+        public const string LaneGround1 = "lane_ground_1";
+        public const string LaneGround2 = "lane_ground_2";
+        public const string LaneAir     = "lane_air";
 
         /// <summary>
         /// Maps a deck slot index to its default lane ID.
-        /// Slots 0, 1, 2 default to lane_ground, slot 3 defaults to lane_air.
+        /// Slots 0, 1, 2 default to lane_ground_1, slot 3 defaults to lane_air.
         /// </summary>
         public static string GetDefaultLaneId(int slotIndex)
         {
-            return slotIndex == 3 ? LaneAir : LaneGround;
+            return slotIndex == 3 ? LaneAir : LaneGround1;
+        }
+
+        /// <summary>
+        /// Toggles between the two ground lanes.
+        /// </summary>
+        public static string GetGroundLaneToggle(string current)
+        {
+            if (current == LaneGround1) return LaneGround2;
+            if (current == LaneGround2) return LaneGround1;
+            return current;
         }
 
         // ── Stage definitions ─────────────────────────────────────────────────
@@ -48,8 +59,15 @@ namespace FrontierBastion.Client.Stage
 
                 Lanes = new[]
                 {
-                    new LaneDefinition(LaneGround, LaneType.Ground, 5000, 0L),
-                    new LaneDefinition(LaneAir,    LaneType.Air,    3000, 1500L),
+                    new LaneDefinition(LaneGround1, LaneType.Ground, 10000,
+                        laneWorldStartXMilli: 0,    laneWorldStartYMilli: 0,
+                        laneWorldEndXMilli:   10000, laneWorldEndYMilli:   0),
+                    new LaneDefinition(LaneGround2, LaneType.Ground, 10000,
+                        laneWorldStartXMilli: 200,   laneWorldStartYMilli: 0,
+                        laneWorldEndXMilli:   10200, laneWorldEndYMilli:   0),
+                    new LaneDefinition(LaneAir,     LaneType.Air,    10000,
+                        laneWorldStartXMilli: 100,   laneWorldStartYMilli: 600,
+                        laneWorldEndXMilli:   10100, laneWorldEndYMilli:   600)
                 },
 
                 SideAConfig = new StageSideConfig
@@ -102,12 +120,16 @@ namespace FrontierBastion.Client.Stage
                     DroneRangeMilli        = 1000,
                     DroneSpeedMilliPerTick = 200,
                     DroneAttackPeriodTick  = 4,
+                    DroneAttackKind        = AttackKind.Melee,
+                    DroneProjectileSpeedMilliPerTick = 0L,
                     PilotHp                = Fp.FromInt(120),
                     PilotAttack            = Fp.FromInt(15),
                     PilotDefense           = Fp.FromInt(5),
                     PilotRangeMilli        = 1000,
                     PilotSpeedMilliPerTick = 220,
                     PilotAttackPeriodTick  = 3,
+                    PilotAttackKind        = AttackKind.Melee,
+                    PilotProjectileSpeedMilliPerTick = 0L,
                 },
                 // Slot 1 — Fragile Ranged (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
@@ -123,12 +145,16 @@ namespace FrontierBastion.Client.Stage
                     DroneRangeMilli        = 4000,
                     DroneSpeedMilliPerTick = 180,
                     DroneAttackPeriodTick  = 3,
+                    DroneAttackKind        = AttackKind.Projectile,
+                    DroneProjectileSpeedMilliPerTick = 600L,
                     PilotHp                = Fp.FromInt(80),
                     PilotAttack            = Fp.FromInt(10),
                     PilotDefense           = Fp.FromInt(5),
                     PilotRangeMilli        = 5000,
                     PilotSpeedMilliPerTick = 200,
                     PilotAttackPeriodTick  = 2,
+                    PilotAttackKind        = AttackKind.Projectile,
+                    PilotProjectileSpeedMilliPerTick = 700L,
                 },
                 // Slot 2 — Melee Tank (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
@@ -144,12 +170,16 @@ namespace FrontierBastion.Client.Stage
                     DroneRangeMilli        = 1000,
                     DroneSpeedMilliPerTick = 100,
                     DroneAttackPeriodTick  = 4,
+                    DroneAttackKind        = AttackKind.Melee,
+                    DroneProjectileSpeedMilliPerTick = 0L,
                     PilotHp                = Fp.FromInt(150),
                     PilotAttack            = Fp.FromInt(7),
                     PilotDefense           = Fp.FromInt(10),
                     PilotRangeMilli        = 1000,
                     PilotSpeedMilliPerTick = 110,
                     PilotAttackPeriodTick  = 4,
+                    PilotAttackKind        = AttackKind.Melee,
+                    PilotProjectileSpeedMilliPerTick = 0L,
                 },
                 // Slot 3 — Air Ranged (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
@@ -165,12 +195,16 @@ namespace FrontierBastion.Client.Stage
                     DroneRangeMilli        = 6000,
                     DroneSpeedMilliPerTick = 220,
                     DroneAttackPeriodTick  = 3,
+                    DroneAttackKind        = AttackKind.Projectile,
+                    DroneProjectileSpeedMilliPerTick = 800L,
                     PilotHp                = Fp.FromInt(80),
                     PilotAttack            = Fp.FromInt(10),
                     PilotDefense           = Fp.FromInt(2),
                     PilotRangeMilli        = 6000,
                     PilotSpeedMilliPerTick = 240,
                     PilotAttackPeriodTick  = 2,
+                    PilotAttackKind        = AttackKind.Projectile,
+                    PilotProjectileSpeedMilliPerTick = 900L,
                 },
             };
         }
@@ -199,12 +233,16 @@ namespace FrontierBastion.Client.Stage
                     DroneRangeMilli        = 1000,
                     DroneSpeedMilliPerTick = 200,
                     DroneAttackPeriodTick  = 4,
+                    DroneAttackKind        = AttackKind.Melee,
+                    DroneProjectileSpeedMilliPerTick = 0L,
                     PilotHp                = Fp.FromInt(120),
                     PilotAttack            = Fp.FromInt(15),
                     PilotDefense           = Fp.FromInt(5),
                     PilotRangeMilli        = 1000,
                     PilotSpeedMilliPerTick = 220,
                     PilotAttackPeriodTick  = 3,
+                    PilotAttackKind        = AttackKind.Melee,
+                    PilotProjectileSpeedMilliPerTick = 0L,
                 },
                 // Slot 1 — Fragile Ranged (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
@@ -220,12 +258,16 @@ namespace FrontierBastion.Client.Stage
                     DroneRangeMilli        = 4000,
                     DroneSpeedMilliPerTick = 180,
                     DroneAttackPeriodTick  = 3,
+                    DroneAttackKind        = AttackKind.Projectile,
+                    DroneProjectileSpeedMilliPerTick = 600L,
                     PilotHp                = Fp.FromInt(80),
                     PilotAttack            = Fp.FromInt(10),
                     PilotDefense           = Fp.FromInt(5),
                     PilotRangeMilli        = 5000,
                     PilotSpeedMilliPerTick = 200,
                     PilotAttackPeriodTick  = 2,
+                    PilotAttackKind        = AttackKind.Projectile,
+                    PilotProjectileSpeedMilliPerTick = 700L,
                 },
                 // Slot 2 — Melee Tank (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
@@ -241,12 +283,16 @@ namespace FrontierBastion.Client.Stage
                     DroneRangeMilli        = 1000,
                     DroneSpeedMilliPerTick = 100,
                     DroneAttackPeriodTick  = 4,
+                    DroneAttackKind        = AttackKind.Melee,
+                    DroneProjectileSpeedMilliPerTick = 0L,
                     PilotHp                = Fp.FromInt(150),
                     PilotAttack            = Fp.FromInt(7),
                     PilotDefense           = Fp.FromInt(10),
                     PilotRangeMilli        = 1000,
                     PilotSpeedMilliPerTick = 110,
                     PilotAttackPeriodTick  = 4,
+                    PilotAttackKind        = AttackKind.Melee,
+                    PilotProjectileSpeedMilliPerTick = 0L,
                 },
                 // Slot 3 — Air Ranged (PROTOTYPE: 사용자 조정 대기)
                 new TroopCardData
@@ -262,12 +308,16 @@ namespace FrontierBastion.Client.Stage
                     DroneRangeMilli        = 6000,
                     DroneSpeedMilliPerTick = 220,
                     DroneAttackPeriodTick  = 3,
+                    DroneAttackKind        = AttackKind.Projectile,
+                    DroneProjectileSpeedMilliPerTick = 800L,
                     PilotHp                = Fp.FromInt(80),
                     PilotAttack            = Fp.FromInt(10),
                     PilotDefense           = Fp.FromInt(2),
                     PilotRangeMilli        = 6000,
                     PilotSpeedMilliPerTick = 240,
                     PilotAttackPeriodTick  = 2,
+                    PilotAttackKind        = AttackKind.Projectile,
+                    PilotProjectileSpeedMilliPerTick = 900L,
                 },
             };
         }
