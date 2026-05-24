@@ -40,6 +40,12 @@ namespace FrontierBastion.Client.Stage
         public long PilotSpeedMilliPerTick;
         public int  PilotAttackPeriodTick;
 
+        // ── v0.5 AttackKind & ProjectileSpeed ─────────────────────────────────
+        public AttackKind DroneAttackKind;
+        public long       DroneProjectileSpeedMilliPerTick;
+        public AttackKind PilotAttackKind;
+        public long       PilotProjectileSpeedMilliPerTick;
+
         // ── Conversion ────────────────────────────────────────────────────────
 
         /// <summary>
@@ -60,12 +66,16 @@ namespace FrontierBastion.Client.Stage
                 droneRangeMilli:        DroneRangeMilli,
                 droneSpeedMilliPerTick: DroneSpeedMilliPerTick,
                 droneAttackPeriodTick:  DroneAttackPeriodTick,
+                droneAttackKind:        DroneAttackKind,
+                droneProjectileSpeedMilliPerTick: DroneProjectileSpeedMilliPerTick,
                 pilotHp:                PilotHp,
                 pilotAttack:            PilotAttack,
                 pilotDefense:           PilotDefense,
                 pilotRangeMilli:        PilotRangeMilli,
                 pilotSpeedMilliPerTick: PilotSpeedMilliPerTick,
-                pilotAttackPeriodTick:  PilotAttackPeriodTick);
+                pilotAttackPeriodTick:  PilotAttackPeriodTick,
+                pilotAttackKind:        PilotAttackKind,
+                pilotProjectileSpeedMilliPerTick: PilotProjectileSpeedMilliPerTick);
         }
     }
 }

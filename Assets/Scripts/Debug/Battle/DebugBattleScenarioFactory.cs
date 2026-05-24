@@ -187,7 +187,7 @@ namespace FrontierBastion.Client.DebugBattle
                 pilotReturnCooldownTick:      100,
                 pilotKnockoutDroneResumeTick: 50,
                 maxBattleTick: 3,
-                lanes: new[] { new LaneDefinition(LaneGround, LaneType.Ground, 100000, 0L) },
+                lanes: new[] { new LaneDefinition(LaneGround, LaneType.Ground, 100000, 0L, 0L, 100000L, 0L) },
                 timeOutTieWinnerSide: BattleSide.SideB);   // SideB wins on equal-HP tie
 
             BattleInitialState initial = new BattleInitialState(
@@ -210,7 +210,7 @@ namespace FrontierBastion.Client.DebugBattle
 
         private static LaneDefinition[] CreateSmokeLanes()
         {
-            return new[] { new LaneDefinition(LaneGround, LaneType.Ground, 1000, 0L) };
+            return new[] { new LaneDefinition(LaneGround, LaneType.Ground, 1000, 0L, 0L, 1000L, 0L) };
         }
 
         // ── SideA slot helpers ────────────────────────────────────────────────
@@ -230,12 +230,16 @@ namespace FrontierBastion.Client.DebugBattle
                 droneRangeMilli:      500,
                 droneSpeedMilliPerTick: 2000,
                 droneAttackPeriodTick: 1,
+                droneAttackKind:      AttackKind.Melee,
+                droneProjectileSpeedMilliPerTick: 0L,
                 pilotHp:              Fp.FromInt(200),
                 pilotAttack:          Fp.FromInt(20),
                 pilotDefense:         Fp.Zero,
                 pilotRangeMilli:      1000,
                 pilotSpeedMilliPerTick: 300,
-                pilotAttackPeriodTick: 1);
+                pilotAttackPeriodTick: 1,
+                pilotAttackKind:      AttackKind.Melee,
+                pilotProjectileSpeedMilliPerTick: 0L);
         }
 
         /// <summary>Placeholder slot with zero-attack stats. Used for sides that don't spawn units.</summary>
@@ -253,12 +257,16 @@ namespace FrontierBastion.Client.DebugBattle
                 droneRangeMilli:      0,
                 droneSpeedMilliPerTick: 0,
                 droneAttackPeriodTick: 1,
+                droneAttackKind:      AttackKind.Melee,
+                droneProjectileSpeedMilliPerTick: 0L,
                 pilotHp:              Fp.FromInt(1),
                 pilotAttack:          Fp.Zero,
                 pilotDefense:         Fp.Zero,
                 pilotRangeMilli:      0,
                 pilotSpeedMilliPerTick: 0,
-                pilotAttackPeriodTick: 1);
+                pilotAttackPeriodTick: 1,
+                pilotAttackKind:      AttackKind.Melee,
+                pilotProjectileSpeedMilliPerTick: 0L);
         }
 
     }
