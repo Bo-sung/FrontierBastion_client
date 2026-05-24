@@ -168,7 +168,7 @@ namespace FrontierBastion.Client.App
             if (_battleManager?.CurrentConfig != null && _battleManager.LastSession != null)
             {
                 _worldView.Render(
-                    _battleManager.CurrentConfig.Lanes,
+                    _battleManager.CurrentConfig,
                     _battleManager.LastSession.LastState,
                     _battleManager.CurrentConfig.SideA.BaseInitialHp,
                     _battleManager.CurrentConfig.SideB.BaseInitialHp,
