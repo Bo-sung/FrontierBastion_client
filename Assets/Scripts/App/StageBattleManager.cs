@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using FrontierBastion.Client.Stage;
 using UnityEngine;
 using BattleSim.Core.Config;
@@ -19,6 +20,9 @@ namespace FrontierBastion.Client.App
 
         /// <summary>The config snapshot for the current session, or null if none.</summary>
         public BattleConfigSnapshot CurrentConfig => LastSession?.Config;
+
+        /// <summary>Exposes the pilot/drone slot definitions of the active session.</summary>
+        public IReadOnlyList<SlotDefinition> SideASlots => LastSession?.SideASlots;
 
         /// <summary>Set true to suspend automatic ticking without destroying the session.</summary>
         public bool IsPaused { get; set; }

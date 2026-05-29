@@ -71,6 +71,7 @@ namespace FrontierBastion.Client.Stage
         public int          CurrentTick     => _simulator?.CurrentTick  ?? 0;
         public string       StageId         => _stage?.StageId;
         public BattleConfigSnapshot Config  => _config;
+        public IReadOnlyList<SlotDefinition> SideASlots => _initialState?.SideA?.Slots;
 
         /// <summary>
         /// True after AdvanceTick threw an unhandled exception.
