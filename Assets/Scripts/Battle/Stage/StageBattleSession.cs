@@ -39,8 +39,9 @@ namespace FrontierBastion.Client.Stage
     /// </summary>
     public sealed class StageBattleSession
     {
-        // 20 TPS: one tick every 0.05 seconds.
-        private const float TickSeconds = 1f / 20f;
+        // PROTOTYPE: 5 TPS (one tick every 0.2s) for readable playtesting.
+        // Final value TBD — change the divisor only.
+        private const float TickSeconds = 1f / 5f;
 
         private const BattleSide LocalSide    = BattleSide.SideA;
         private const BattleSide OpponentSide = BattleSide.SideB;
