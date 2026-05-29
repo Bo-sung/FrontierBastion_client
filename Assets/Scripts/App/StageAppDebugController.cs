@@ -7,34 +7,28 @@ using FrontierBastion.Client.Stage;
 using BattleSim.Core.State;
 using BattleSim.Core.FixedPoint;
 using BattleSim.Core.Results;
+using FrontierBastion.Client.UI;
 
 namespace FrontierBastion.Client.App
 {
     /// <summary>
-    /// Debug Input Bridge and stats overlay for testing Stage prototype v0.4 battle sessions.
-    ///
-    /// Automatically attached to the AppRoot GameObject in editor and development builds.
-    /// Manages F6 bootstrapping, hotkey inputs for manual player spawning, and displays
-    /// a premium status overlay using OnGUI.
+    /// Debug overlay controller. Toggled via F9 (default hidden).
+    /// Bypasses primary player input logic (routed via Presenter) and only renders
+    /// the status overlay and drives the world view rendering.
     /// </summary>
     public sealed class StageAppDebugController : MonoBehaviour
     {
         private StageBattleManager   _battleManager;
-        private StageDataManager     _stageData;
-        private string               _lastInputError;
-        private float                _errorDisplayTimeLeft;
         private StageBattleWorldView _worldView;
         private bool                 _lastFaultedReported;
+        private bool                 _showDebugOverlay = false;
 
-        private int                  _selectedSlot = 0;
-        private int                  _selectedLaneIndex = 0;
         private readonly Queue<string> _recentEventLines = new Queue<string>();
         private int                  _lastProcessedEventTick = -1;
 
         private void Start()
         {
             _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindFirstObjectByType<StageBattleManager>();
-            _stageData     = AppRoot.Instance != null ? AppRoot.Instance.StageData : FindFirstObjectByType<StageDataManager>();
             _worldView     = StageBattleWorldView.GetOrCreate(gameObject);
         }
 
@@ -46,83 +40,9 @@ namespace FrontierBastion.Client.App
 
         private void Update()
         {
-            if (_battleManager == null || _stageData == null) return;
-
-            // F6: Start Interactive Sandbox Battle
-            if (KeyPressed(Key.F6))
+            if (KeyPressed(Key.F9))
             {
-                var stage = StagePrototypeCatalog.CreateInteractiveSandboxStage();
-                var deck  = StagePrototypeCatalog.CreateSideAPrototypeDeck();
-                _battleManager.StartPrototypeBattle(stage, deck);
-                SetError(null);
-            }
-
-            // A: Toggle Opponent Auto AI
-            if (KeyPressed(Key.A))
-            {
-                _battleManager.ToggleOpponentAuto();
-            }
-
-            // Space: Toggle Pause/Resume
-            if (KeyPressed(Key.Space))
-            {
-                _battleManager.IsPaused = !_battleManager.IsPaused;
-            }
-
-            // F8: Manual Step (if paused)
-            if (KeyPressed(Key.F8))
-            {
-                if (_battleManager.IsPaused)
-                {
-                    _battleManager.ManualStep();
-                }
-            }
-
-            // 1..4: Select slot 0..3 (selection only, no action)
-            if (KeyPressed(Key.Digit1)) _selectedSlot = 0;
-            else if (KeyPressed(Key.Digit2)) _selectedSlot = 1;
-            else if (KeyPressed(Key.Digit3)) _selectedSlot = 2;
-            else if (KeyPressed(Key.Digit4)) _selectedSlot = 3;
-
-            // Q / E: Cycle selected lane (previous / next)
-            int laneCount = LaneCount();
-            if (laneCount > 0)
-            {
-                if (KeyPressed(Key.Q)) _selectedLaneIndex = (_selectedLaneIndex - 1 + laneCount) % laneCount;
-                else if (KeyPressed(Key.E)) _selectedLaneIndex = (_selectedLaneIndex + 1) % laneCount;
-            }
-
-            // W: Spawn drone squad (selected slot -> selected lane)
-            if (KeyPressed(Key.W))
-            {
-                string laneId = CurrentLaneId();
-                string err    = _battleManager.SubmitSpawnDroneSquad(_selectedSlot, laneId);
-                ReportInput($"Spawn Drone Slot {_selectedSlot} lane {laneId}", err);
-            }
-
-            // R: Deploy pilot (selected slot -> selected lane)
-            if (KeyPressed(Key.R))
-            {
-                string laneId = CurrentLaneId();
-                string err    = _battleManager.SubmitDeployPilot(_selectedSlot, laneId);
-                ReportInput($"Deploy Pilot Slot {_selectedSlot} lane {laneId}", err);
-            }
-
-            // T: Recall pilot (selected slot)
-            if (KeyPressed(Key.T))
-            {
-                string err = _battleManager.SubmitRecallPilot(_selectedSlot);
-                ReportInput($"Recall Pilot Slot {_selectedSlot}", err);
-            }
-
-            // Decay error timer
-            if (_errorDisplayTimeLeft > 0f)
-            {
-                _errorDisplayTimeLeft -= Time.deltaTime;
-                if (_errorDisplayTimeLeft <= 0f)
-                {
-                    _lastInputError = null;
-                }
+                _showDebugOverlay = !_showDebugOverlay;
             }
         }
 
@@ -183,43 +103,9 @@ namespace FrontierBastion.Client.App
             }
         }
 
-        private void SetError(string msg)
-        {
-            _lastInputError = msg;
-            _errorDisplayTimeLeft = msg != null ? 4f : 0f;
-        }
-
-        private void ReportInput(string action, string err)
-        {
-            if (err != null)
-            {
-                SetError($"{action}: {err}");
-                Debug.LogWarning($"[DebugBridge] {action} rejected: {err}");
-            }
-            else
-            {
-                SetError(null);
-            }
-        }
-
-        private int LaneCount()
-        {
-            var cfg = _battleManager != null ? _battleManager.CurrentConfig : null;
-            return (cfg != null && cfg.Lanes != null) ? cfg.Lanes.Length : 0;
-        }
-
-        private string CurrentLaneId()
-        {
-            var cfg = _battleManager != null ? _battleManager.CurrentConfig : null;
-            if (cfg == null || cfg.Lanes == null || cfg.Lanes.Length == 0)
-                return "lane_ground_1";
-            int n = cfg.Lanes.Length;
-            int idx = ((_selectedLaneIndex % n) + n) % n;
-            return cfg.Lanes[idx].LaneId;
-        }
-
         private void OnGUI()
         {
+            if (!_showDebugOverlay) return;
             if (_battleManager == null) return;
 
             StageBattleSession session = _battleManager.LastSession;
@@ -294,14 +180,7 @@ namespace FrontierBastion.Client.App
 
             // Input status / Error
             GUI.Label(new Rect(20, y, 290, 20), $"<b>[Last Input Status]</b>", style); y += lineOffset;
-            if (!string.IsNullOrEmpty(_lastInputError))
-            {
-                GUI.Label(new Rect(30, y, 280, 40), $"<color=red>{_lastInputError}</color>", style);
-            }
-            else
-            {
-                GUI.Label(new Rect(30, y, 280, 20), "<color=grey>No errors (Inputs OK)</color>", style);
-            }
+            GUI.Label(new Rect(30, y, 280, 20), "<color=grey>No errors (Inputs OK)</color>", style);
             y += 30f;
 
             // Session State (Faulted or Terminated)
@@ -319,8 +198,12 @@ namespace FrontierBastion.Client.App
             }
             else
             {
+                var presenter = AppRoot.Instance != null ? AppRoot.Instance.Presenter : FindFirstObjectByType<StageBattlePresenter>();
+                int selSlot = presenter != null ? presenter.SelectedSlot : 0;
+                string selLane = presenter != null ? presenter.SelectedLaneId : "lane_ground_1";
+
                 GUI.Label(new Rect(20, y, 290, 70),
-                    $"<color=white>Selected Slot: <b>{_selectedSlot + 1}</b> | Lane: <b>{CurrentLaneId()}</b></color>\n" +
+                    $"<color=white>Selected Slot: <b>{selSlot + 1}</b> | Lane: <b>{selLane}</b></color>\n" +
                     "<color=grey>[1..4]: Select Slot | [Q/E]: Prev/Next Lane\n" +
                     "[W]: Spawn Drone | [R]: Deploy Pilot | [T]: Recall Pilot\n" +
                     "[Space]: Pause/Resume | [F8]: Step | [A]: Auto Opponent</color>", style);

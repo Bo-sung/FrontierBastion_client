@@ -1,4 +1,5 @@
 using UnityEngine;
+using FrontierBastion.Client.UI;
 
 namespace FrontierBastion.Client.App
 {
@@ -16,6 +17,7 @@ namespace FrontierBastion.Client.App
         public StageDataManager   StageData   { get; private set; }
         public StageBattleManager StageBattle { get; private set; }
         public StageFlowManager   StageFlow   { get; private set; }
+        public StageBattlePresenter Presenter { get; private set; }
 
         private void Awake()
         {
@@ -44,6 +46,7 @@ namespace FrontierBastion.Client.App
             StageData   = gameObject.AddComponent<StageDataManager>();
             StageBattle = gameObject.AddComponent<StageBattleManager>();
             StageFlow   = gameObject.AddComponent<StageFlowManager>();
+            Presenter   = gameObject.AddComponent<StageBattlePresenter>();
 
             StageBattle.Bind(StageData);
             StageFlow.Bind(StageBattle);

@@ -67,6 +67,9 @@ namespace FrontierBastion.Client.UI
         private int _selectedSlot = 0;
         private int _selectedLaneIndex = 0;
 
+        public int SelectedSlot => _selectedSlot;
+        public string SelectedLaneId => CurrentLaneId();
+
         // Status messages and limit/error tracking
         private string _statusText = null;
         private float _statusTimer = 0f;
