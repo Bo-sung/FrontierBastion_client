@@ -26,7 +26,8 @@ namespace FrontierBastion.Client.App
         private StageBattleWorldView _worldView;
         private bool                 _lastFaultedReported;
 
-        private string               _selectedGroundLane = "lane_ground_1";
+        private int                  _selectedSlot = 0;
+        private int                  _selectedLaneIndex = 0;
         private readonly Queue<string> _recentEventLines = new Queue<string>();
         private int                  _lastProcessedEventTick = -1;
 
@@ -62,20 +63,14 @@ namespace FrontierBastion.Client.App
                 _battleManager.ToggleOpponentAuto();
             }
 
-            // L: Toggle Selected Ground Lane
-            if (KeyPressed(Key.L))
-            {
-                _selectedGroundLane = StagePrototypeCatalog.GetGroundLaneToggle(_selectedGroundLane);
-            }
-
             // Space: Toggle Pause/Resume
             if (KeyPressed(Key.Space))
             {
                 _battleManager.IsPaused = !_battleManager.IsPaused;
             }
 
-            // T: Manual Step (if paused)
-            if (KeyPressed(Key.T))
+            // F8: Manual Step (if paused)
+            if (KeyPressed(Key.F8))
             {
                 if (_battleManager.IsPaused)
                 {
@@ -83,69 +78,41 @@ namespace FrontierBastion.Client.App
                 }
             }
 
-            // 1..4: Spawn Drone Squad for slot 0..3
-            int spawnSlot = -1;
-            if (KeyPressed(Key.Digit1)) spawnSlot = 0;
-            else if (KeyPressed(Key.Digit2)) spawnSlot = 1;
-            else if (KeyPressed(Key.Digit3)) spawnSlot = 2;
-            else if (KeyPressed(Key.Digit4)) spawnSlot = 3;
+            // 1..4: Select slot 0..3 (selection only, no action)
+            if (KeyPressed(Key.Digit1)) _selectedSlot = 0;
+            else if (KeyPressed(Key.Digit2)) _selectedSlot = 1;
+            else if (KeyPressed(Key.Digit3)) _selectedSlot = 2;
+            else if (KeyPressed(Key.Digit4)) _selectedSlot = 3;
 
-            if (spawnSlot != -1)
+            // Q / E: Cycle selected lane (previous / next)
+            int laneCount = LaneCount();
+            if (laneCount > 0)
             {
-                string laneId = (spawnSlot == 3) ? StagePrototypeCatalog.GetDefaultLaneId(spawnSlot) : _selectedGroundLane;
-                string err    = _battleManager.SubmitSpawnDroneSquad(spawnSlot, laneId);
-                if (err != null)
-                {
-                    SetError($"Spawn Drone Slot {spawnSlot} Error: {err}");
-                    Debug.LogWarning($"[DebugBridge] Spawn Drone Slot {spawnSlot} Rejection: {err}");
-                }
-                else
-                {
-                    SetError(null);
-                }
+                if (KeyPressed(Key.Q)) _selectedLaneIndex = (_selectedLaneIndex - 1 + laneCount) % laneCount;
+                else if (KeyPressed(Key.E)) _selectedLaneIndex = (_selectedLaneIndex + 1) % laneCount;
             }
 
-            // Q..R: Deploy Pilot for slot 0..3
-            int deploySlot = -1;
-            if (KeyPressed(Key.Q)) deploySlot = 0;
-            else if (KeyPressed(Key.W)) deploySlot = 1;
-            else if (KeyPressed(Key.E)) deploySlot = 2;
-            else if (KeyPressed(Key.R)) deploySlot = 3;
-
-            if (deploySlot != -1)
+            // W: Spawn drone squad (selected slot -> selected lane)
+            if (KeyPressed(Key.W))
             {
-                string laneId = (deploySlot == 3) ? StagePrototypeCatalog.GetDefaultLaneId(deploySlot) : _selectedGroundLane;
-                string err    = _battleManager.SubmitDeployPilot(deploySlot, laneId);
-                if (err != null)
-                {
-                    SetError($"Deploy Pilot Slot {deploySlot} Error: {err}");
-                    Debug.LogWarning($"[DebugBridge] Deploy Pilot Slot {deploySlot} Rejection: {err}");
-                }
-                else
-                {
-                    SetError(null);
-                }
+                string laneId = CurrentLaneId();
+                string err    = _battleManager.SubmitSpawnDroneSquad(_selectedSlot, laneId);
+                ReportInput($"Spawn Drone Slot {_selectedSlot} lane {laneId}", err);
             }
 
-            // Z..V: Recall Pilot for slot 0..3
-            int recallSlot = -1;
-            if (KeyPressed(Key.Z)) recallSlot = 0;
-            else if (KeyPressed(Key.X)) recallSlot = 1;
-            else if (KeyPressed(Key.C)) recallSlot = 2;
-            else if (KeyPressed(Key.V)) recallSlot = 3;
-
-            if (recallSlot != -1)
+            // R: Deploy pilot (selected slot -> selected lane)
+            if (KeyPressed(Key.R))
             {
-                string err = _battleManager.SubmitRecallPilot(recallSlot);
-                if (err != null)
-                {
-                    SetError($"Recall Pilot Slot {recallSlot} Error: {err}");
-                    Debug.LogWarning($"[DebugBridge] Recall Pilot Slot {recallSlot} Rejection: {err}");
-                }
-                else
-                {
-                    SetError(null);
-                }
+                string laneId = CurrentLaneId();
+                string err    = _battleManager.SubmitDeployPilot(_selectedSlot, laneId);
+                ReportInput($"Deploy Pilot Slot {_selectedSlot} lane {laneId}", err);
+            }
+
+            // T: Recall pilot (selected slot)
+            if (KeyPressed(Key.T))
+            {
+                string err = _battleManager.SubmitRecallPilot(_selectedSlot);
+                ReportInput($"Recall Pilot Slot {_selectedSlot}", err);
             }
 
             // Decay error timer
@@ -222,6 +189,35 @@ namespace FrontierBastion.Client.App
             _errorDisplayTimeLeft = msg != null ? 4f : 0f;
         }
 
+        private void ReportInput(string action, string err)
+        {
+            if (err != null)
+            {
+                SetError($"{action}: {err}");
+                Debug.LogWarning($"[DebugBridge] {action} rejected: {err}");
+            }
+            else
+            {
+                SetError(null);
+            }
+        }
+
+        private int LaneCount()
+        {
+            var cfg = _battleManager != null ? _battleManager.CurrentConfig : null;
+            return (cfg != null && cfg.Lanes != null) ? cfg.Lanes.Length : 0;
+        }
+
+        private string CurrentLaneId()
+        {
+            var cfg = _battleManager != null ? _battleManager.CurrentConfig : null;
+            if (cfg == null || cfg.Lanes == null || cfg.Lanes.Length == 0)
+                return "lane_ground_1";
+            int n = cfg.Lanes.Length;
+            int idx = ((_selectedLaneIndex % n) + n) % n;
+            return cfg.Lanes[idx].LaneId;
+        }
+
         private void OnGUI()
         {
             if (_battleManager == null) return;
@@ -246,7 +242,7 @@ namespace FrontierBastion.Client.App
 
             GUI.Label(new Rect(20, y, 290, 20), $"<b>Stage ID:</b> {session.StageId}", style); y += lineOffset;
             
-            string pauseStr = _battleManager.IsPaused ? "<color=yellow>PAUSED (Press [T] to step)</color>" : "<color=green>RUNNING</color>";
+            string pauseStr = _battleManager.IsPaused ? "<color=yellow>PAUSED (Press [F8] to step)</color>" : "<color=green>RUNNING</color>";
             GUI.Label(new Rect(20, y, 290, 20), $"<b>Simulation:</b> {pauseStr}", style); y += lineOffset;
 
             int tick = session.CurrentTick;
@@ -323,7 +319,11 @@ namespace FrontierBastion.Client.App
             }
             else
             {
-                GUI.Label(new Rect(20, y, 290, 50), $"<color=grey>Controls:\n[1..4]: Spawn Drones | [Q..R]: Pilot | [Z..V]: Recall\n[Space]: Pause/Resume | [A]: Auto Opponent\n[L]: Ground Lane Toggle (current: {_selectedGroundLane})</color>", style);
+                GUI.Label(new Rect(20, y, 290, 70),
+                    $"<color=white>Selected Slot: <b>{_selectedSlot + 1}</b> | Lane: <b>{CurrentLaneId()}</b></color>\n" +
+                    "<color=grey>[1..4]: Select Slot | [Q/E]: Prev/Next Lane\n" +
+                    "[W]: Spawn Drone | [R]: Deploy Pilot | [T]: Recall Pilot\n" +
+                    "[Space]: Pause/Resume | [F8]: Step | [A]: Auto Opponent</color>", style);
             }
 
             // Recent Events overlay box
