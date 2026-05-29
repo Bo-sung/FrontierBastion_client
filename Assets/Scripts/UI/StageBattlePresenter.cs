@@ -79,11 +79,11 @@ namespace FrontierBastion.Client.UI
         {
             if (_battleManager == null)
             {
-                _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindFirstObjectByType<StageBattleManager>();
+                _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindAnyObjectByType<StageBattleManager>();
             }
             if (_view == null)
             {
-                _view = FindFirstObjectByType<StageBattleHudView>();
+                _view = FindAnyObjectByType<StageBattleHudView>();
             }
         }
 

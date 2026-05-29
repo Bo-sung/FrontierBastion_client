@@ -60,7 +60,7 @@ namespace FrontierBastion.Client.UI
         {
             if (presenter == null)
             {
-                presenter = FindFirstObjectByType<StageBattlePresenter>();
+                presenter = FindAnyObjectByType<StageBattlePresenter>();
             }
 
             BindButtons();

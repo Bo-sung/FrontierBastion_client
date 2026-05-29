@@ -28,7 +28,7 @@ namespace FrontierBastion.Client.App
 
         private void Start()
         {
-            _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindFirstObjectByType<StageBattleManager>();
+            _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindAnyObjectByType<StageBattleManager>();
             _worldView     = StageBattleWorldView.GetOrCreate(gameObject);
         }
 
@@ -198,7 +198,7 @@ namespace FrontierBastion.Client.App
             }
             else
             {
-                var presenter = AppRoot.Instance != null ? AppRoot.Instance.Presenter : FindFirstObjectByType<StageBattlePresenter>();
+                var presenter = AppRoot.Instance != null ? AppRoot.Instance.Presenter : FindAnyObjectByType<StageBattlePresenter>();
                 int selSlot = presenter != null ? presenter.SelectedSlot : 0;
                 string selLane = presenter != null ? presenter.SelectedLaneId : "lane_ground_1";
 
