@@ -132,10 +132,11 @@ namespace FrontierBastion.Client.UI
                 }
             }
 
-            // Energy Bar and Text (assume max energy is 120f)
+            // Energy Bar and Text (max from config, no hardcoded cap)
             if (sideAEnergyBar != null)
             {
-                sideAEnergyBar.value = vm.HasSession ? Mathf.Clamp01(vm.SideAEnergy / 120f) : 0f;
+                sideAEnergyBar.value = (vm.HasSession && vm.SideAEnergyMax > 0f)
+                    ? Mathf.Clamp01(vm.SideAEnergy / vm.SideAEnergyMax) : 0f;
             }
             if (sideAEnergyText != null)
             {

@@ -6,6 +6,8 @@ using BattleSim.Core.FixedPoint;
 using BattleSim.Core.Results;
 using BattleSim.Core.State;
 using BattleSim.Core.Events;
+using FrontierBastion.Client.App;
+using FrontierBastion.Client.UI;
 
 namespace FrontierBastion.Client.Stage
 {
@@ -320,7 +322,8 @@ namespace FrontierBastion.Client.Stage
             BattleState           state,
             Fp                    sideAInitialBaseHp,
             Fp                    sideBInitialBaseHp,
-            BattleSide            timeOutTieWinnerSide)
+            BattleSide            timeOutTieWinnerSide,
+            string                selectedLaneId = null)
         {
             if (config == null || state == null)
             {
@@ -338,7 +341,7 @@ namespace FrontierBastion.Client.Stage
             RenderBases(state, sideAInitialBaseHp, sideBInitialBaseHp, centerY, baseHeight);
 
             // 4. Render lane bars
-            RenderLanes(config.Lanes);
+            RenderLanes(config.Lanes, selectedLaneId);
 
             // 5. Process new events from the core state
             if (state.CurrentTick != _lastProcessedTick)
@@ -537,7 +540,7 @@ namespace FrontierBastion.Client.Stage
             }
         }
 
-        private void RenderLanes(IReadOnlyList<LaneDefinition> lanes)
+        private void RenderLanes(IReadOnlyList<LaneDefinition> lanes, string selectedLaneId)
         {
             // One object per lane, plus one faint base-to-base axis guide line.
             int needed = lanes.Count + 1;
@@ -557,7 +560,10 @@ namespace FrontierBastion.Client.Stage
                 if (i < lanes.Count)
                 {
                     var seg = GetLaneSegment(lanes[i].LaneId);
-                    PlaceSegment(_lineObjects[i], seg.start, seg.end, LaneBarThick, new Color(0.3f, 0.3f, 0.3f, 0.7f));
+                    bool selected = lanes[i].LaneId == selectedLaneId;
+                    Color col = selected ? new Color(1f, 0.85f, 0.2f, 0.95f) : new Color(0.3f, 0.3f, 0.3f, 0.7f);
+                    float thick = selected ? LaneBarThick * 2f : LaneBarThick;
+                    PlaceSegment(_lineObjects[i], seg.start, seg.end, thick, col);
                 }
                 else if (i == lanes.Count)
                 {
@@ -913,6 +919,30 @@ namespace FrontierBastion.Client.Stage
                         ft.GameObject.SetActive(false);
                     }
                 }
+            }
+        }
+
+        // Self-driven: pulls the live session + selected lane from AppRoot each frame.
+        // This makes the world view a first-class runtime view (not gated behind the
+        // editor-only debug controller).
+        private void LateUpdate()
+        {
+            var root = AppRoot.Instance;
+            var mgr = root != null ? root.StageBattle : null;
+            if (mgr != null && mgr.CurrentConfig != null && mgr.LastSession != null)
+            {
+                string selLane = root.Presenter != null ? root.Presenter.SelectedLaneId : null;
+                Render(
+                    mgr.CurrentConfig,
+                    mgr.LastSession.LastState,
+                    mgr.CurrentConfig.SideA.BaseInitialHp,
+                    mgr.CurrentConfig.SideB.BaseInitialHp,
+                    mgr.CurrentConfig.TimeOutTieWinnerSide,
+                    selLane);
+            }
+            else
+            {
+                Render(null, null, Fp.Zero, Fp.Zero, BattleSide.SideB, null);
             }
         }
 

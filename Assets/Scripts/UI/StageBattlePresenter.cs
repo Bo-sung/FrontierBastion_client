@@ -38,6 +38,7 @@ namespace FrontierBastion.Client.UI
         public int CurrentTick;
         
         public float SideAEnergy;
+        public float SideAEnergyMax;
         public float SideABaseHp;
         public float SideABaseHpMax;
         
@@ -272,6 +273,7 @@ namespace FrontierBastion.Client.UI
             {
                 vm.SideABaseHpMax = (float)config.SideA.BaseInitialHp.Raw / 10000f;
                 vm.SideBBaseHpMax = (float)config.SideB.BaseInitialHp.Raw / 10000f;
+                vm.SideAEnergyMax = (float)config.SideA.MaxEnergy.Raw / 10000f;
             }
 
             if (state != null && state.Sides != null)

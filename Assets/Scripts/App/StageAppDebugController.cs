@@ -19,7 +19,6 @@ namespace FrontierBastion.Client.App
     public sealed class StageAppDebugController : MonoBehaviour
     {
         private StageBattleManager   _battleManager;
-        private StageBattleWorldView _worldView;
         private bool                 _lastFaultedReported;
         private bool                 _showDebugOverlay = false;
 
@@ -29,7 +28,7 @@ namespace FrontierBastion.Client.App
         private void Start()
         {
             _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindAnyObjectByType<StageBattleManager>();
-            _worldView     = StageBattleWorldView.GetOrCreate(gameObject);
+            // World view is now self-driven and created by AppRoot.EnterStage(); not owned here.
         }
 
         private static bool KeyPressed(Key key)
@@ -86,21 +85,6 @@ namespace FrontierBastion.Client.App
                 }
             }
 
-            if (_worldView == null) return;
-
-            if (_battleManager?.CurrentConfig != null && _battleManager.LastSession != null)
-            {
-                _worldView.Render(
-                    _battleManager.CurrentConfig,
-                    _battleManager.LastSession.LastState,
-                    _battleManager.CurrentConfig.SideA.BaseInitialHp,
-                    _battleManager.CurrentConfig.SideB.BaseInitialHp,
-                    _battleManager.CurrentConfig.TimeOutTieWinnerSide);
-            }
-            else
-            {
-                _worldView.Render(null, null, Fp.Zero, Fp.Zero, BattleSide.SideB);
-            }
         }
 
         private void OnGUI()

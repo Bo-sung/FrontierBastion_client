@@ -96,6 +96,9 @@ namespace FrontierBastion.Client.App
         /// </summary>
         public void EnterStage()
         {
+            // First-class self-driven world-space battle view (reads state via AppRoot).
+            FrontierBastion.Client.Stage.StageBattleWorldView.GetOrCreate(gameObject);
+
             GameObject hudPrefab = Resources.Load<GameObject>(HudResourcePath);
             if (hudPrefab == null)
             {
