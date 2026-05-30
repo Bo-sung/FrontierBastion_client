@@ -71,6 +71,27 @@ namespace FrontierBastion.Client.Stage
         private const float BaseWidth = 0.35f;
         private const float EntitySize = 0.28f;
 
+        // Prefab Resources paths
+        private const string PrefabPathEntityMarker = "Battle/EntityMarker";
+        private const string PrefabPathProjectile = "Battle/Projectile";
+        private const string PrefabPathBaseColumn = "Battle/BaseColumn";
+        private const string PrefabPathFloatingDamageText = "Battle/FloatingDamageText";
+        private const string PrefabPathResultBanner = "Battle/ResultBanner";
+
+        // Cached prefabs
+        private GameObject _prefabEntityMarker;
+        private GameObject _prefabProjectile;
+        private GameObject _prefabBaseColumn;
+        private GameObject _prefabFloatingDamageText;
+        private GameObject _prefabResultBanner;
+
+        // Fallback flags
+        private bool _fallbackEntityMarker;
+        private bool _fallbackProjectile;
+        private bool _fallbackBaseColumn;
+        private bool _fallbackFloatingDamageText;
+        private bool _fallbackResultBanner;
+
         private static Sprite _whiteSprite;
 
         private readonly List<GameObject> _lineObjects = new List<GameObject>();
@@ -79,6 +100,95 @@ namespace FrontierBastion.Client.Stage
         private GameObject _resultBannerObject;
         private TextMesh _resultBannerText;
         private Camera _spawnedCamera;
+
+        private void Awake()
+        {
+            LoadPrefabs();
+        }
+
+        private void LoadPrefabs()
+        {
+            _prefabEntityMarker = Resources.Load<GameObject>(PrefabPathEntityMarker);
+            if (_prefabEntityMarker == null)
+            {
+                _fallbackEntityMarker = true;
+                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathEntityMarker}. Using procedural fallback.");
+            }
+            else
+            {
+                var sr = _prefabEntityMarker.GetComponentInChildren<SpriteRenderer>();
+                if (sr == null)
+                {
+                    _fallbackEntityMarker = true;
+                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathEntityMarker} has no SpriteRenderer component. Using procedural fallback.");
+                }
+            }
+
+            _prefabProjectile = Resources.Load<GameObject>(PrefabPathProjectile);
+            if (_prefabProjectile == null)
+            {
+                _fallbackProjectile = true;
+                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathProjectile}. Using procedural fallback.");
+            }
+            else
+            {
+                var sr = _prefabProjectile.GetComponentInChildren<SpriteRenderer>();
+                if (sr == null)
+                {
+                    _fallbackProjectile = true;
+                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathProjectile} has no SpriteRenderer component. Using procedural fallback.");
+                }
+            }
+
+            _prefabBaseColumn = Resources.Load<GameObject>(PrefabPathBaseColumn);
+            if (_prefabBaseColumn == null)
+            {
+                _fallbackBaseColumn = true;
+                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathBaseColumn}. Using procedural fallback.");
+            }
+            else
+            {
+                var sr = _prefabBaseColumn.GetComponentInChildren<SpriteRenderer>();
+                if (sr == null)
+                {
+                    _fallbackBaseColumn = true;
+                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathBaseColumn} has no SpriteRenderer component. Using procedural fallback.");
+                }
+            }
+
+            _prefabFloatingDamageText = Resources.Load<GameObject>(PrefabPathFloatingDamageText);
+            if (_prefabFloatingDamageText == null)
+            {
+                _fallbackFloatingDamageText = true;
+                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathFloatingDamageText}. Using procedural fallback.");
+            }
+            else
+            {
+                var tm = _prefabFloatingDamageText.GetComponentInChildren<TextMesh>();
+                if (tm == null)
+                {
+                    _fallbackFloatingDamageText = true;
+                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathFloatingDamageText} has no TextMesh component. Using procedural fallback.");
+                }
+            }
+
+            _prefabResultBanner = Resources.Load<GameObject>(PrefabPathResultBanner);
+            if (_prefabResultBanner == null)
+            {
+                _fallbackResultBanner = true;
+                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathResultBanner}. Using procedural fallback.");
+            }
+            else
+            {
+                var tm = _prefabResultBanner.GetComponentInChildren<TextMesh>();
+                if (tm == null)
+                {
+                    _fallbackResultBanner = true;
+                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathResultBanner} has no TextMesh component. Using procedural fallback.");
+                }
+            }
+        }
+
 
         // Visual Registries
         private readonly Dictionary<string, VisualEntity> _activeEntities = new Dictionary<string, VisualEntity>();
@@ -189,10 +299,28 @@ namespace FrontierBastion.Client.Stage
             }
             if (ve == null)
             {
-                GameObject go = new GameObject("VisualEntity");
-                go.transform.SetParent(transform, false);
-                var sr = go.AddComponent<SpriteRenderer>();
-                sr.sprite = GetWhiteSprite();
+                GameObject go = null;
+                SpriteRenderer sr = null;
+                if (!_fallbackEntityMarker)
+                {
+                    go = Instantiate(_prefabEntityMarker, transform, false);
+                    go.name = "VisualEntity";
+                    sr = go.GetComponentInChildren<SpriteRenderer>();
+                    if (sr == null)
+                    {
+                        Debug.LogWarning($"[StageBattleWorldView] EntityMarker prefab instance has no SpriteRenderer component. Falling back to procedural.");
+                        Destroy(go);
+                        go = null;
+                    }
+                }
+
+                if (go == null)
+                {
+                    go = new GameObject("VisualEntity");
+                    go.transform.SetParent(transform, false);
+                    sr = go.AddComponent<SpriteRenderer>();
+                }
+
                 ve = new VisualEntity
                 {
                     GameObject = go,
@@ -224,6 +352,11 @@ namespace FrontierBastion.Client.Stage
 
             ve.GameObject.transform.localScale = new Vector3(EntitySize, EntitySize, 1f);
 
+            if (ve.SpriteRenderer.sprite == null)
+            {
+                ve.SpriteRenderer.sprite = GetWhiteSprite();
+            }
+
             return ve;
         }
 
@@ -240,10 +373,28 @@ namespace FrontierBastion.Client.Stage
             }
             if (vp == null)
             {
-                GameObject go = new GameObject("VisualProjectile");
-                go.transform.SetParent(transform, false);
-                var sr = go.AddComponent<SpriteRenderer>();
-                sr.sprite = GetWhiteSprite();
+                GameObject go = null;
+                SpriteRenderer sr = null;
+                if (!_fallbackProjectile)
+                {
+                    go = Instantiate(_prefabProjectile, transform, false);
+                    go.name = "VisualProjectile";
+                    sr = go.GetComponentInChildren<SpriteRenderer>();
+                    if (sr == null)
+                    {
+                        Debug.LogWarning($"[StageBattleWorldView] Projectile prefab instance has no SpriteRenderer component. Falling back to procedural.");
+                        Destroy(go);
+                        go = null;
+                    }
+                }
+
+                if (go == null)
+                {
+                    go = new GameObject("VisualProjectile");
+                    go.transform.SetParent(transform, false);
+                    sr = go.AddComponent<SpriteRenderer>();
+                }
+
                 vp = new VisualProjectile
                 {
                     GameObject = go,
@@ -273,6 +424,11 @@ namespace FrontierBastion.Client.Stage
 
             vp.GameObject.transform.localScale = new Vector3(0.18f, 0.18f, 1f);
 
+            if (vp.SpriteRenderer.sprite == null)
+            {
+                vp.SpriteRenderer.sprite = GetWhiteSprite();
+            }
+
             return vp;
         }
 
@@ -289,14 +445,33 @@ namespace FrontierBastion.Client.Stage
             }
             if (ft == null)
             {
-                GameObject go = new GameObject("FloatingText");
-                go.transform.SetParent(transform, false);
-                var tm = go.AddComponent<TextMesh>();
-                tm.alignment = TextAlignment.Center;
-                tm.anchor = TextAnchor.MiddleCenter;
-                tm.characterSize = 0.08f;
-                tm.fontSize = 40;
-                tm.fontStyle = FontStyle.Bold;
+                GameObject go = null;
+                TextMesh tm = null;
+                if (!_fallbackFloatingDamageText)
+                {
+                    go = Instantiate(_prefabFloatingDamageText, transform, false);
+                    go.name = "FloatingText";
+                    tm = go.GetComponentInChildren<TextMesh>();
+                    if (tm == null)
+                    {
+                        Debug.LogWarning($"[StageBattleWorldView] FloatingDamageText prefab instance has no TextMesh component. Falling back to procedural.");
+                        Destroy(go);
+                        go = null;
+                    }
+                }
+
+                if (go == null)
+                {
+                    go = new GameObject("FloatingText");
+                    go.transform.SetParent(transform, false);
+                    tm = go.AddComponent<TextMesh>();
+                    tm.alignment = TextAlignment.Center;
+                    tm.anchor = TextAnchor.MiddleCenter;
+                    tm.characterSize = 0.08f;
+                    tm.fontSize = 40;
+                    tm.fontStyle = FontStyle.Bold;
+                }
+
                 ft = new FloatingText
                 {
                     GameObject = go,
@@ -312,6 +487,7 @@ namespace FrontierBastion.Client.Stage
             ft.GameObject.transform.position = position;
             ft.GameObject.SetActive(true);
         }
+
 
         /// <summary>
         /// Renders the stage state to the world view using event-driven visuals.
@@ -486,29 +662,77 @@ namespace FrontierBastion.Client.Stage
         {
             if (_baseAObject == null)
             {
-                _baseAObject = new GameObject("StageBaseColumn_SideA");
-                _baseAObject.transform.SetParent(transform, false);
-                var sr = _baseAObject.AddComponent<SpriteRenderer>();
-                sr.sprite = GetWhiteSprite();
-                sr.color = new Color(0.1f, 0.5f, 0.9f, 1f);
+                GameObject go = null;
+                SpriteRenderer sr = null;
+                if (!_fallbackBaseColumn)
+                {
+                    go = Instantiate(_prefabBaseColumn, transform, false);
+                    go.name = "StageBaseColumn_SideA";
+                    sr = go.GetComponentInChildren<SpriteRenderer>();
+                    if (sr == null)
+                    {
+                        Debug.LogWarning($"[StageBattleWorldView] BaseColumn prefab instance has no SpriteRenderer component. Falling back to procedural.");
+                        Destroy(go);
+                        go = null;
+                    }
+                }
+
+                if (go == null)
+                {
+                    go = new GameObject("StageBaseColumn_SideA");
+                    go.transform.SetParent(transform, false);
+                    sr = go.AddComponent<SpriteRenderer>();
+                }
+
+                _baseAObject = go;
                 _baseAObject.hideFlags = HideFlags.DontSave;
             }
             _baseAObject.SetActive(true);
             _baseAObject.transform.position = new Vector3(-5.0f, centerY, 0f);
             _baseAObject.transform.localScale = new Vector3(BaseWidth, baseHeight, 1f);
 
+            var srA = _baseAObject.GetComponentInChildren<SpriteRenderer>();
+            if (srA != null && srA.sprite == null)
+            {
+                srA.sprite = GetWhiteSprite();
+            }
+
             if (_baseBObject == null)
             {
-                _baseBObject = new GameObject("StageBaseColumn_SideB");
-                _baseBObject.transform.SetParent(transform, false);
-                var sr = _baseBObject.AddComponent<SpriteRenderer>();
-                sr.sprite = GetWhiteSprite();
-                sr.color = new Color(0.9f, 0.2f, 0.2f, 1f);
+                GameObject go = null;
+                SpriteRenderer sr = null;
+                if (!_fallbackBaseColumn)
+                {
+                    go = Instantiate(_prefabBaseColumn, transform, false);
+                    go.name = "StageBaseColumn_SideB";
+                    sr = go.GetComponentInChildren<SpriteRenderer>();
+                    if (sr == null)
+                    {
+                        Debug.LogWarning($"[StageBattleWorldView] BaseColumn prefab instance has no SpriteRenderer component. Falling back to procedural.");
+                        Destroy(go);
+                        go = null;
+                    }
+                }
+
+                if (go == null)
+                {
+                    go = new GameObject("StageBaseColumn_SideB");
+                    go.transform.SetParent(transform, false);
+                    sr = go.AddComponent<SpriteRenderer>();
+                }
+
+                _baseBObject = go;
                 _baseBObject.hideFlags = HideFlags.DontSave;
             }
             _baseBObject.SetActive(true);
             _baseBObject.transform.position = new Vector3(5.0f, centerY, 0f);
             _baseBObject.transform.localScale = new Vector3(BaseWidth, baseHeight, 1f);
+
+            var srB = _baseBObject.GetComponentInChildren<SpriteRenderer>();
+            if (srB != null && srB.sprite == null)
+            {
+                srB.sprite = GetWhiteSprite();
+            }
 
             BattleSideState sideA = null;
             BattleSideState sideB = null;
@@ -528,7 +752,8 @@ namespace FrontierBastion.Client.Stage
                 float ratio = Mathf.Clamp01((float)sideA.BaseHp.Raw / (float)sideAInitialBaseHp.Raw);
                 Color baseColor = Color.Lerp(baseMinColor, new Color(0.1f, 0.5f, 0.9f, 1f), ratio);
                 if (_baseAFlashTimer > 0f) baseColor += new Color(0.3f, 0.3f, 0.3f, 0f);
-                _baseAObject.GetComponent<SpriteRenderer>().color = baseColor;
+                var sr = _baseAObject.GetComponentInChildren<SpriteRenderer>();
+                if (sr != null) sr.color = baseColor;
             }
 
             if (sideB != null && sideBInitialBaseHp.Raw > 0)
@@ -536,7 +761,8 @@ namespace FrontierBastion.Client.Stage
                 float ratio = Mathf.Clamp01((float)sideB.BaseHp.Raw / (float)sideBInitialBaseHp.Raw);
                 Color baseColor = Color.Lerp(baseMinColor, new Color(0.9f, 0.2f, 0.2f, 1f), ratio);
                 if (_baseBFlashTimer > 0f) baseColor += new Color(0.3f, 0.3f, 0.3f, 0f);
-                _baseBObject.GetComponent<SpriteRenderer>().color = baseColor;
+                var sr = _baseBObject.GetComponentInChildren<SpriteRenderer>();
+                if (sr != null) sr.color = baseColor;
             }
         }
 
@@ -755,14 +981,35 @@ namespace FrontierBastion.Client.Stage
 
             if (_resultBannerObject == null)
             {
-                _resultBannerObject = new GameObject("StageResultBanner");
-                _resultBannerObject.transform.SetParent(transform, false);
-                _resultBannerText = _resultBannerObject.AddComponent<TextMesh>();
-                _resultBannerText.alignment = TextAlignment.Center;
-                _resultBannerText.anchor = TextAnchor.MiddleCenter;
-                _resultBannerText.characterSize = 0.15f;
-                _resultBannerText.fontSize = 90;
-                _resultBannerText.fontStyle = FontStyle.Bold;
+                GameObject go = null;
+                TextMesh tm = null;
+                if (!_fallbackResultBanner)
+                {
+                    go = Instantiate(_prefabResultBanner, transform, false);
+                    go.name = "StageResultBanner";
+                    tm = go.GetComponentInChildren<TextMesh>();
+                    if (tm == null)
+                    {
+                        Debug.LogWarning($"[StageBattleWorldView] ResultBanner prefab instance has no TextMesh component. Falling back to procedural.");
+                        Destroy(go);
+                        go = null;
+                    }
+                }
+
+                if (go == null)
+                {
+                    go = new GameObject("StageResultBanner");
+                    go.transform.SetParent(transform, false);
+                    tm = go.AddComponent<TextMesh>();
+                    tm.alignment = TextAlignment.Center;
+                    tm.anchor = TextAnchor.MiddleCenter;
+                    tm.characterSize = 0.15f;
+                    tm.fontSize = 90;
+                    tm.fontStyle = FontStyle.Bold;
+                }
+
+                _resultBannerObject = go;
+                _resultBannerText = tm;
                 _resultBannerObject.hideFlags = HideFlags.DontSave;
             }
 
