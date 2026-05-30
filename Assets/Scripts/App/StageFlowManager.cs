@@ -12,6 +12,7 @@ namespace FrontierBastion.Client.App
     public sealed class StageFlowManager : MonoBehaviour
     {
         private StageBattleManager _battleManager;
+        private GameObject _hudInstance;
 
         // Called by AppRoot.CreateManagers() after all AddComponents.
         public void Bind(StageBattleManager battleManager)
@@ -22,6 +23,27 @@ namespace FrontierBastion.Client.App
         public void StartPrototypeBattle()
         {
             _battleManager?.StartPrototypeBattle();
+        }
+
+        /// <summary>
+        /// Enters a stage: spawns the HUD prefab under the given UI root.
+        /// Idempotent — does nothing if a HUD instance already exists.
+        /// </summary>
+        public void EnterStage(Canvas uiRoot, GameObject hudPrefab)
+        {
+            if (uiRoot == null || hudPrefab == null) return;
+            if (_hudInstance != null) return;
+            _hudInstance = Object.Instantiate(hudPrefab, uiRoot.transform, false);
+        }
+
+        /// <summary>Despawns the current HUD instance, if any.</summary>
+        public void ExitStage()
+        {
+            if (_hudInstance != null)
+            {
+                Object.Destroy(_hudInstance);
+                _hudInstance = null;
+            }
         }
     }
 }

@@ -17,7 +17,8 @@ namespace FrontierBastion.Client.App
             if (AppRoot.Instance != null) return;
 
             var rootGO = new GameObject("AppRoot");
-            rootGO.AddComponent<AppRoot>(); // AppRoot.Awake fires immediately
+            var appRoot = rootGO.AddComponent<AppRoot>(); // AppRoot.Awake → CreateManagers (UIRoot, managers)
+            appRoot.EnterStage();                         // load HUD from Resources, spawn under UIRoot
         }
     }
 }

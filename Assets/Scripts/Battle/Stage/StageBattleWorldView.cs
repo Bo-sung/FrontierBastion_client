@@ -120,27 +120,46 @@ namespace FrontierBastion.Client.Stage
             return _whiteSprite;
         }
 
-        private (float y, float halfWidth) GetLaneMetrics(string laneId)
-        {
-            if (laneId == "lane_ground_2")
-                return (-0.8f, 4.2f);
-            if (laneId == "lane_air")
-                return (-3.0f, 3.0f);
-            return (0f, 5.0f); // lane_ground_1, lane_ground, or default fallback
-        }
+        // Oblique "lying triangular prism" projection.
+        // The base-to-base progress axis runs left (player) → right (enemy).
+        // The three lane edges are parallel segments, each tilted slightly upward
+        // off that axis (oblique feel), stacked top→bottom:
+        //   lane_air      = top edge
+        //   lane_ground_1 = middle edge (sits on the base-to-base axis)
+        //   lane_ground_2 = bottom edge
+        private const float LaneLeftX  = -5f;  // player base side
+        private const float LaneRightX =  5f;  // enemy base side
+        private const float LaneTilt   = 0f; // end.y - start.y (0 = level lanes)
 
-        private float GetWorldX(string laneId, long positionMilli, long laneLengthMilli)
+        private (Vector2 start, Vector2 end) GetLaneSegment(string laneId)
         {
-            var metrics = GetLaneMetrics(laneId);
-            float normX = laneLengthMilli > 0 ? (float)positionMilli / laneLengthMilli : (float)positionMilli / 10000f;
-            return -metrics.halfWidth + normX * (metrics.halfWidth * 2f);
+            float baseY;
+            if (laneId == "lane_air")            baseY = 1.4f;   // top
+            else if (laneId == "lane_ground_2")  baseY = -1.6f;  // bottom
+            else                                 baseY = -0.1f;  // ground_1 / axis (middle)
+            return (new Vector2(LaneLeftX, baseY), new Vector2(LaneRightX, baseY + LaneTilt));
         }
 
         private Vector3 GetWorldPosition(string laneId, long positionMilli, long laneLengthMilli, float z = -0.1f)
         {
-            var metrics = GetLaneMetrics(laneId);
-            float x = GetWorldX(laneId, positionMilli, laneLengthMilli);
-            return new Vector3(x, metrics.y, z);
+            var seg = GetLaneSegment(laneId);
+            float t = laneLengthMilli > 0 ? (float)positionMilli / laneLengthMilli : (float)positionMilli / 10000f;
+            t = Mathf.Clamp01(t);
+            Vector2 p = Vector2.Lerp(seg.start, seg.end, t);
+            return new Vector3(p.x, p.y, z);
+        }
+
+        private void GetYExtents(IReadOnlyList<LaneDefinition> lanes, out float centerY, out float height)
+        {
+            float yMin = float.MaxValue, yMax = float.MinValue;
+            foreach (var lane in lanes)
+            {
+                var seg = GetLaneSegment(lane.LaneId);
+                yMin = Mathf.Min(yMin, Mathf.Min(seg.start.y, seg.end.y));
+                yMax = Mathf.Max(yMax, Mathf.Max(seg.start.y, seg.end.y));
+            }
+            centerY = (yMin + yMax) * 0.5f;
+            height = (yMax - yMin) + 1.2f;
         }
 
         private long GetLaneLength(BattleConfigSnapshot config, string laneId)
@@ -313,16 +332,7 @@ namespace FrontierBastion.Client.Stage
             EnsureCamera(config.Lanes);
 
             // 2. Compute dynamic Y metrics for the base columns
-            float yMin = float.MaxValue;
-            float yMax = float.MinValue;
-            foreach (var lane in config.Lanes)
-            {
-                float ly = GetLaneMetrics(lane.LaneId).y;
-                yMin = Mathf.Min(yMin, ly);
-                yMax = Mathf.Max(yMax, ly);
-            }
-            float centerY = (yMin + yMax) / 2.0f;
-            float baseHeight = (yMax - yMin) + 1.2f;
+            GetYExtents(config.Lanes, out float centerY, out float baseHeight);
 
             // 3. Render base pillars
             RenderBases(state, sideAInitialBaseHp, sideBInitialBaseHp, centerY, baseHeight);
@@ -463,17 +473,7 @@ namespace FrontierBastion.Client.Stage
 
             if (_spawnedCamera != null)
             {
-                float yMin = float.MaxValue;
-                float yMax = float.MinValue;
-                foreach (var lane in lanes)
-                {
-                    float ly = GetLaneMetrics(lane.LaneId).y;
-                    yMin = Mathf.Min(yMin, ly);
-                    yMax = Mathf.Max(yMax, ly);
-                }
-                float centerY = (yMin + yMax) / 2.0f;
-                float baseHeight = (yMax - yMin) + 1.2f;
-
+                GetYExtents(lanes, out float centerY, out float baseHeight);
                 _spawnedCamera.transform.position = new Vector3(0f, centerY, -10f);
                 _spawnedCamera.orthographicSize = Mathf.Max(4.5f, baseHeight * 1.5f);
             }
@@ -539,7 +539,9 @@ namespace FrontierBastion.Client.Stage
 
         private void RenderLanes(IReadOnlyList<LaneDefinition> lanes)
         {
-            while (_lineObjects.Count < lanes.Count)
+            // One object per lane, plus one faint base-to-base axis guide line.
+            int needed = lanes.Count + 1;
+            while (_lineObjects.Count < needed)
             {
                 GameObject lineGO = new GameObject($"StageLaneBar_{_lineObjects.Count}");
                 lineGO.transform.SetParent(transform, false);
@@ -554,17 +556,35 @@ namespace FrontierBastion.Client.Stage
             {
                 if (i < lanes.Count)
                 {
-                    var lane = lanes[i];
-                    var metrics = GetLaneMetrics(lane.LaneId);
-                    _lineObjects[i].SetActive(true);
-                    _lineObjects[i].transform.position = new Vector3(0f, metrics.y, 0f);
-                    _lineObjects[i].transform.localScale = new Vector3(metrics.halfWidth * 2f, LaneBarThick, 1f);
+                    var seg = GetLaneSegment(lanes[i].LaneId);
+                    PlaceSegment(_lineObjects[i], seg.start, seg.end, LaneBarThick, new Color(0.3f, 0.3f, 0.3f, 0.7f));
+                }
+                else if (i == lanes.Count)
+                {
+                    // Base-to-base axis guide: horizontal line through the vertical center.
+                    GetYExtents(lanes, out float cy, out _);
+                    PlaceSegment(_lineObjects[i], new Vector2(LaneLeftX, cy), new Vector2(LaneRightX, cy),
+                        0.03f, new Color(0.55f, 0.55f, 0.6f, 0.4f));
                 }
                 else
                 {
                     _lineObjects[i].SetActive(false);
                 }
             }
+        }
+
+        private void PlaceSegment(GameObject go, Vector2 start, Vector2 end, float thickness, Color color)
+        {
+            go.SetActive(true);
+            Vector2 center = (start + end) * 0.5f;
+            Vector2 diff = end - start;
+            float length = diff.magnitude;
+            float angle = Mathf.Atan2(diff.y, diff.x) * Mathf.Rad2Deg;
+            go.transform.position = new Vector3(center.x, center.y, 0f);
+            go.transform.rotation = Quaternion.Euler(0f, 0f, angle);
+            go.transform.localScale = new Vector3(length, thickness, 1f);
+            var sr = go.GetComponent<SpriteRenderer>();
+            if (sr != null) sr.color = color;
         }
 
         private void ProcessEvent(BattleEvent evt, BattleConfigSnapshot config)
