@@ -8,68 +8,33 @@ using BattleSim.Core.State;
 using BattleSim.Core.Events;
 using FrontierBastion.Client.App;
 using FrontierBastion.Client.UI;
+using FrontierBastion.Client.Stage.View;
 
 namespace FrontierBastion.Client.Stage
 {
     /// <summary>
     /// Pure runtime-generated world space view of a Stage battle session (v0.5+v0.7 event-driven).
-    /// Renders lanes, bases (color-lerped by HP with 피격 flash), visual entities (with damage floating text,
-    /// attack scale pulsing, knockback smoothing, died fade, recall recall fade), projectiles, and a victory/defeat banner.
-    /// Excludes any dependency on legacy debug runner/world views.
+    /// Redesigned to use generic pools, dedicated View MonoBehaviours, and deterministic visibility cap + distance bucket.
     /// </summary>
     internal sealed class StageBattleWorldView : MonoBehaviour
     {
-        private enum EntityVisualState
-        {
-            Alive,
-            Dying,
-            Recalling
-        }
-
-        private sealed class VisualEntity
+        private struct EntityStateWrapper
         {
             public string EntityId;
-            public GameObject GameObject;
-            public SpriteRenderer SpriteRenderer;
+            public int NumericId;
             public string LaneId;
             public BattleSide Side;
-            public EntityVisualState State;
-            public float StateTimer;
-
-            // Knockback/movement interpolation
-            public Vector3 CurrentPos;
-            public Vector3 TargetPos;
-            public float InterpolationTimer;
-            public float InterpolationDuration;
-
-            // Pulse/Scale timer
-            public float PulseTimer;
-        }
-
-        private sealed class VisualProjectile
-        {
-            public string ProjectileId;
-            public GameObject GameObject;
-            public SpriteRenderer SpriteRenderer;
-            public string LaneId;
-            public BattleSide Side;
-
-            public bool IsDying;
-            public float FadeTimer;
-        }
-
-        private sealed class FloatingText
-        {
-            public GameObject GameObject;
-            public TextMesh TextMesh;
-            public float Timer;
-            public Vector3 StartPos;
+            public long PositionMilli;
         }
 
         // View configuration constants
         private const float LaneBarThick = 0.07f;
         private const float BaseWidth = 0.35f;
         private const float EntitySize = 0.28f;
+
+        // Visibility Cap Configuration
+        private const int MaxVisibleEntities = 600; // per-side default 300
+        private const int BucketSizeMilli = 200;
 
         // Prefab Resources paths
         private const string PrefabPathEntityMarker = "Battle/EntityMarker";
@@ -85,25 +50,42 @@ namespace FrontierBastion.Client.Stage
         private GameObject _prefabFloatingDamageText;
         private GameObject _prefabResultBanner;
 
-        // Fallback flags
-        private bool _fallbackEntityMarker;
-        private bool _fallbackProjectile;
-        private bool _fallbackBaseColumn;
-        private bool _fallbackFloatingDamageText;
-        private bool _fallbackResultBanner;
 
         private static Sprite _whiteSprite;
 
         private readonly List<GameObject> _lineObjects = new List<GameObject>();
-        private GameObject _baseAObject;
-        private GameObject _baseBObject;
-        private GameObject _resultBannerObject;
-        private TextMesh _resultBannerText;
+        private BaseColumnView _baseAView;
+        private BaseColumnView _baseBView;
+        private ResultBannerView _resultBannerViewInstance;
         private Camera _spawnedCamera;
+
+        // Pools (using generic GameObjectPool)
+        private GameObjectPool<EntityMarkerView> _entityPool;
+        private GameObjectPool<ProjectileView> _projectilePool;
+        private GameObjectPool<BaseColumnView> _baseColumnPool;
+        private GameObjectPool<FloatingTextView> _floatingTextPool;
+        private GameObjectPool<ResultBannerView> _resultBannerPool;
+
+        // Active Registries
+        private readonly Dictionary<string, EntityMarkerView> _activeEntities = new Dictionary<string, EntityMarkerView>();
+        private readonly Dictionary<string, ProjectileView> _activeProjectiles = new Dictionary<string, ProjectileView>();
+
+        // Reusable lists to minimize garbage allocations
+        private readonly List<EntityStateWrapper> _candidatesA = new List<EntityStateWrapper>();
+        private readonly List<EntityStateWrapper> _candidatesB = new List<EntityStateWrapper>();
+        private readonly Dictionary<string, EntityStateWrapper> _bucketMap = new Dictionary<string, EntityStateWrapper>();
+        private readonly HashSet<string> _visibleEntityIds = new HashSet<string>();
+
+        // Dying / Recalling visual storage for entities that were destroyed in core but performing fade outs
+        private readonly List<EntityMarkerView> _fadingEntities = new List<EntityMarkerView>();
+
+        // Event-driven state
+        private int _lastProcessedTick = -1;
 
         private void Awake()
         {
             LoadPrefabs();
+            InitializePools();
         }
 
         private void LoadPrefabs()
@@ -111,98 +93,174 @@ namespace FrontierBastion.Client.Stage
             _prefabEntityMarker = Resources.Load<GameObject>(PrefabPathEntityMarker);
             if (_prefabEntityMarker == null)
             {
-                _fallbackEntityMarker = true;
                 Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathEntityMarker}. Using procedural fallback.");
-            }
-            else
-            {
-                var sr = _prefabEntityMarker.GetComponentInChildren<SpriteRenderer>();
-                if (sr == null)
-                {
-                    _fallbackEntityMarker = true;
-                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathEntityMarker} has no SpriteRenderer component. Using procedural fallback.");
-                }
             }
 
             _prefabProjectile = Resources.Load<GameObject>(PrefabPathProjectile);
             if (_prefabProjectile == null)
             {
-                _fallbackProjectile = true;
                 Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathProjectile}. Using procedural fallback.");
-            }
-            else
-            {
-                var sr = _prefabProjectile.GetComponentInChildren<SpriteRenderer>();
-                if (sr == null)
-                {
-                    _fallbackProjectile = true;
-                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathProjectile} has no SpriteRenderer component. Using procedural fallback.");
-                }
             }
 
             _prefabBaseColumn = Resources.Load<GameObject>(PrefabPathBaseColumn);
             if (_prefabBaseColumn == null)
             {
-                _fallbackBaseColumn = true;
                 Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathBaseColumn}. Using procedural fallback.");
-            }
-            else
-            {
-                var sr = _prefabBaseColumn.GetComponentInChildren<SpriteRenderer>();
-                if (sr == null)
-                {
-                    _fallbackBaseColumn = true;
-                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathBaseColumn} has no SpriteRenderer component. Using procedural fallback.");
-                }
             }
 
             _prefabFloatingDamageText = Resources.Load<GameObject>(PrefabPathFloatingDamageText);
             if (_prefabFloatingDamageText == null)
             {
-                _fallbackFloatingDamageText = true;
                 Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathFloatingDamageText}. Using procedural fallback.");
-            }
-            else
-            {
-                var tm = _prefabFloatingDamageText.GetComponentInChildren<TextMesh>();
-                if (tm == null)
-                {
-                    _fallbackFloatingDamageText = true;
-                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathFloatingDamageText} has no TextMesh component. Using procedural fallback.");
-                }
             }
 
             _prefabResultBanner = Resources.Load<GameObject>(PrefabPathResultBanner);
             if (_prefabResultBanner == null)
             {
-                _fallbackResultBanner = true;
                 Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathResultBanner}. Using procedural fallback.");
-            }
-            else
-            {
-                var tm = _prefabResultBanner.GetComponentInChildren<TextMesh>();
-                if (tm == null)
-                {
-                    _fallbackResultBanner = true;
-                    Debug.LogWarning($"[StageBattleWorldView] Prefab at Resources/{PrefabPathResultBanner} has no TextMesh component. Using procedural fallback.");
-                }
             }
         }
 
+        private void InitializePools()
+        {
+            _entityPool = new GameObjectPool<EntityMarkerView>(
+                null,
+                transform,
+                30,
+                () => {
+                    if (_prefabEntityMarker != null)
+                    {
+                        var go = Instantiate(_prefabEntityMarker, transform, false);
+                        var comp = go.GetComponent<EntityMarkerView>();
+                        if (comp == null) comp = go.AddComponent<EntityMarkerView>();
+                        return comp;
+                    }
+                    return CreateProceduralEntityFallback();
+                }
+            );
 
-        // Visual Registries
-        private readonly Dictionary<string, VisualEntity> _activeEntities = new Dictionary<string, VisualEntity>();
-        private readonly Dictionary<string, VisualProjectile> _activeProjectiles = new Dictionary<string, VisualProjectile>();
+            _projectilePool = new GameObjectPool<ProjectileView>(
+                null,
+                transform,
+                20,
+                () => {
+                    if (_prefabProjectile != null)
+                    {
+                        var go = Instantiate(_prefabProjectile, transform, false);
+                        var comp = go.GetComponent<ProjectileView>();
+                        if (comp == null) comp = go.AddComponent<ProjectileView>();
+                        return comp;
+                    }
+                    return CreateProceduralProjectileFallback();
+                }
+            );
 
-        // Pools (to avoid GC allocations)
-        private readonly List<VisualEntity> _entityPool = new List<VisualEntity>();
-        private readonly List<VisualProjectile> _projectilePool = new List<VisualProjectile>();
-        private readonly List<FloatingText> _floatingTextPool = new List<FloatingText>();
+            _baseColumnPool = new GameObjectPool<BaseColumnView>(
+                null,
+                transform,
+                2,
+                () => {
+                    if (_prefabBaseColumn != null)
+                    {
+                        var go = Instantiate(_prefabBaseColumn, transform, false);
+                        var comp = go.GetComponent<BaseColumnView>();
+                        if (comp == null) comp = go.AddComponent<BaseColumnView>();
+                        return comp;
+                    }
+                    return CreateProceduralBaseFallback();
+                }
+            );
 
-        // Event-driven state
-        private int _lastProcessedTick = -1;
-        private float _baseAFlashTimer = 0f;
-        private float _baseBFlashTimer = 0f;
+            _floatingTextPool = new GameObjectPool<FloatingTextView>(
+                null,
+                transform,
+                15,
+                () => {
+                    if (_prefabFloatingDamageText != null)
+                    {
+                        var go = Instantiate(_prefabFloatingDamageText, transform, false);
+                        var comp = go.GetComponent<FloatingTextView>();
+                        if (comp == null) comp = go.AddComponent<FloatingTextView>();
+                        return comp;
+                    }
+                    return CreateProceduralFloatingTextFallback();
+                }
+            );
+
+            _resultBannerPool = new GameObjectPool<ResultBannerView>(
+                null,
+                transform,
+                1,
+                () => {
+                    if (_prefabResultBanner != null)
+                    {
+                        var go = Instantiate(_prefabResultBanner, transform, false);
+                        var comp = go.GetComponent<ResultBannerView>();
+                        if (comp == null) comp = go.AddComponent<ResultBannerView>();
+                        return comp;
+                    }
+                    return CreateProceduralResultBannerFallback();
+                }
+            );
+        }
+
+        private EntityMarkerView CreateProceduralEntityFallback()
+        {
+            GameObject go = new GameObject("VisualEntity");
+            go.transform.SetParent(transform, false);
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = GetWhiteSprite();
+            var marker = go.AddComponent<EntityMarkerView>();
+            return marker;
+        }
+
+        private ProjectileView CreateProceduralProjectileFallback()
+        {
+            GameObject go = new GameObject("VisualProjectile");
+            go.transform.SetParent(transform, false);
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = GetWhiteSprite();
+            var proj = go.AddComponent<ProjectileView>();
+            return proj;
+        }
+
+        private BaseColumnView CreateProceduralBaseFallback()
+        {
+            GameObject go = new GameObject("BaseColumn");
+            go.transform.SetParent(transform, false);
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = GetWhiteSprite();
+            var col = go.AddComponent<BaseColumnView>();
+            return col;
+        }
+
+        private FloatingTextView CreateProceduralFloatingTextFallback()
+        {
+            GameObject go = new GameObject("FloatingText");
+            go.transform.SetParent(transform, false);
+            var tm = go.AddComponent<TextMesh>();
+            tm.alignment = TextAlignment.Center;
+            tm.anchor = TextAnchor.MiddleCenter;
+            tm.characterSize = 0.08f;
+            tm.fontSize = 40;
+            tm.fontStyle = FontStyle.Bold;
+            var ft = go.AddComponent<FloatingTextView>();
+            return ft;
+        }
+
+        private ResultBannerView CreateProceduralResultBannerFallback()
+        {
+            GameObject go = new GameObject("ResultBanner");
+            go.transform.SetParent(transform, false);
+            var tm = go.AddComponent<TextMesh>();
+            tm.alignment = TextAlignment.Center;
+            tm.anchor = TextAnchor.MiddleCenter;
+            tm.characterSize = 0.15f;
+            tm.fontSize = 90;
+            tm.fontStyle = FontStyle.Bold;
+            var rb = go.AddComponent<ResultBannerView>();
+            return rb;
+        }
 
         /// <summary>
         /// Gets or attaches a <see cref="StageBattleWorldView"/> component to the host.
@@ -232,23 +290,17 @@ namespace FrontierBastion.Client.Stage
             return _whiteSprite;
         }
 
-        // Oblique "lying triangular prism" projection.
-        // The base-to-base progress axis runs left (player) → right (enemy).
-        // The three lane edges are parallel segments, each tilted slightly upward
-        // off that axis (oblique feel), stacked top→bottom:
-        //   lane_air      = top edge
-        //   lane_ground_1 = middle edge (sits on the base-to-base axis)
-        //   lane_ground_2 = bottom edge
-        private const float LaneLeftX  = -5f;  // player base side
-        private const float LaneRightX =  5f;  // enemy base side
-        private const float LaneTilt   = 0f; // end.y - start.y (0 = level lanes)
+        // Triangle prism projection coordinates
+        private const float LaneLeftX = -5f;
+        private const float LaneRightX = 5f;
+        private const float LaneTilt = 0f;
 
         private (Vector2 start, Vector2 end) GetLaneSegment(string laneId)
         {
             float baseY;
-            if (laneId == "lane_air")            baseY = 1.4f;   // top
-            else if (laneId == "lane_ground_2")  baseY = -1.6f;  // bottom
-            else                                 baseY = -0.1f;  // ground_1 / axis (middle)
+            if (laneId == "lane_air") baseY = 1.4f;
+            else if (laneId == "lane_ground_2") baseY = -1.6f;
+            else baseY = -0.1f;
             return (new Vector2(LaneLeftX, baseY), new Vector2(LaneRightX, baseY + LaneTilt));
         }
 
@@ -286,220 +338,40 @@ namespace FrontierBastion.Client.Stage
             return 10000L;
         }
 
-        private VisualEntity GetPooledEntity(string entityId, string laneId, BattleSide side)
+        private static int GetNumericId(string entityId)
         {
-            VisualEntity ve = null;
-            foreach (var e in _entityPool)
-            {
-                if (e != null && e.GameObject != null && !e.GameObject.activeSelf && e.State == EntityVisualState.Alive)
-                {
-                    ve = e;
-                    break;
-                }
-            }
-            if (ve == null)
-            {
-                GameObject go = null;
-                SpriteRenderer sr = null;
-                if (!_fallbackEntityMarker)
-                {
-                    go = Instantiate(_prefabEntityMarker, transform, false);
-                    go.name = "VisualEntity";
-                    sr = go.GetComponentInChildren<SpriteRenderer>();
-                    if (sr == null)
-                    {
-                        Debug.LogWarning($"[StageBattleWorldView] EntityMarker prefab instance has no SpriteRenderer component. Falling back to procedural.");
-                        Destroy(go);
-                        go = null;
-                    }
-                }
-
-                if (go == null)
-                {
-                    go = new GameObject("VisualEntity");
-                    go.transform.SetParent(transform, false);
-                    sr = go.AddComponent<SpriteRenderer>();
-                }
-
-                ve = new VisualEntity
-                {
-                    GameObject = go,
-                    SpriteRenderer = sr
-                };
-                _entityPool.Add(ve);
-            }
-
-            ve.EntityId = entityId;
-            ve.LaneId = laneId;
-            ve.Side = side;
-            ve.State = EntityVisualState.Alive;
-            ve.StateTimer = 0f;
-            ve.InterpolationTimer = -1f;
-            ve.PulseTimer = 0f;
-            ve.GameObject.name = $"VisualEntity_{entityId}";
-            ve.GameObject.SetActive(true);
-
-            int numericId = 0;
             if (entityId != null && entityId.StartsWith("e_") && int.TryParse(entityId.Substring(2), out int parsedId))
             {
-                numericId = parsedId;
+                return parsedId;
             }
-            ve.SpriteRenderer.sortingOrder = 100 + numericId;
-
-            ve.SpriteRenderer.color = side == BattleSide.SideA
-                ? new Color(0.1f, 0.8f, 0.9f, 1f)  // Cyan
-                : new Color(0.9f, 0.6f, 0.1f, 1f); // Orange
-
-            ve.GameObject.transform.localScale = new Vector3(EntitySize, EntitySize, 1f);
-
-            if (ve.SpriteRenderer.sprite == null)
-            {
-                ve.SpriteRenderer.sprite = GetWhiteSprite();
-            }
-
-            return ve;
+            return 0;
         }
 
-        private VisualProjectile GetPooledProjectile(string projectileId, string laneId, BattleSide side)
+        // Deterministic sorting comparators
+        private static int CompareSideA(EntityStateWrapper x, EntityStateWrapper y)
         {
-            VisualProjectile vp = null;
-            foreach (var p in _projectilePool)
-            {
-                if (p != null && p.GameObject != null && !p.GameObject.activeSelf)
-                {
-                    vp = p;
-                    break;
-                }
-            }
-            if (vp == null)
-            {
-                GameObject go = null;
-                SpriteRenderer sr = null;
-                if (!_fallbackProjectile)
-                {
-                    go = Instantiate(_prefabProjectile, transform, false);
-                    go.name = "VisualProjectile";
-                    sr = go.GetComponentInChildren<SpriteRenderer>();
-                    if (sr == null)
-                    {
-                        Debug.LogWarning($"[StageBattleWorldView] Projectile prefab instance has no SpriteRenderer component. Falling back to procedural.");
-                        Destroy(go);
-                        go = null;
-                    }
-                }
-
-                if (go == null)
-                {
-                    go = new GameObject("VisualProjectile");
-                    go.transform.SetParent(transform, false);
-                    sr = go.AddComponent<SpriteRenderer>();
-                }
-
-                vp = new VisualProjectile
-                {
-                    GameObject = go,
-                    SpriteRenderer = sr
-                };
-                _projectilePool.Add(vp);
-            }
-
-            vp.ProjectileId = projectileId;
-            vp.LaneId = laneId;
-            vp.Side = side;
-            vp.IsDying = false;
-            vp.FadeTimer = 0f;
-            vp.GameObject.name = $"VisualProjectile_{projectileId}";
-            vp.GameObject.SetActive(true);
-
-            int numericId = 0;
-            if (projectileId != null && projectileId.StartsWith("p_") && int.TryParse(projectileId.Substring(2), out int parsedId))
-            {
-                numericId = parsedId;
-            }
-            vp.SpriteRenderer.sortingOrder = 200 + numericId;
-
-            vp.SpriteRenderer.color = side == BattleSide.SideA
-                ? new Color(0.4f, 0.95f, 1.0f, 1f)  // Light Cyan
-                : new Color(1.0f, 0.75f, 0.3f, 1f); // Light Orange
-
-            vp.GameObject.transform.localScale = new Vector3(0.18f, 0.18f, 1f);
-
-            if (vp.SpriteRenderer.sprite == null)
-            {
-                vp.SpriteRenderer.sprite = GetWhiteSprite();
-            }
-
-            return vp;
+            int cmp = y.PositionMilli.CompareTo(x.PositionMilli); // Position descending (closer to enemy base)
+            if (cmp != 0) return cmp;
+            return x.NumericId.CompareTo(y.NumericId); // Tie-breaker by NumericId ascending
         }
 
-        private void GetPooledFloatingText(string text, Vector3 position)
+        private static int CompareSideB(EntityStateWrapper x, EntityStateWrapper y)
         {
-            FloatingText ft = null;
-            foreach (var t in _floatingTextPool)
-            {
-                if (t != null && t.GameObject != null && !t.GameObject.activeSelf)
-                {
-                    ft = t;
-                    break;
-                }
-            }
-            if (ft == null)
-            {
-                GameObject go = null;
-                TextMesh tm = null;
-                if (!_fallbackFloatingDamageText)
-                {
-                    go = Instantiate(_prefabFloatingDamageText, transform, false);
-                    go.name = "FloatingText";
-                    tm = go.GetComponentInChildren<TextMesh>();
-                    if (tm == null)
-                    {
-                        Debug.LogWarning($"[StageBattleWorldView] FloatingDamageText prefab instance has no TextMesh component. Falling back to procedural.");
-                        Destroy(go);
-                        go = null;
-                    }
-                }
-
-                if (go == null)
-                {
-                    go = new GameObject("FloatingText");
-                    go.transform.SetParent(transform, false);
-                    tm = go.AddComponent<TextMesh>();
-                    tm.alignment = TextAlignment.Center;
-                    tm.anchor = TextAnchor.MiddleCenter;
-                    tm.characterSize = 0.08f;
-                    tm.fontSize = 40;
-                    tm.fontStyle = FontStyle.Bold;
-                }
-
-                ft = new FloatingText
-                {
-                    GameObject = go,
-                    TextMesh = tm
-                };
-                _floatingTextPool.Add(ft);
-            }
-
-            ft.TextMesh.text = text;
-            ft.TextMesh.color = Color.red;
-            ft.StartPos = position;
-            ft.Timer = 0f;
-            ft.GameObject.transform.position = position;
-            ft.GameObject.SetActive(true);
+            int cmp = x.PositionMilli.CompareTo(y.PositionMilli); // Position ascending (closer to player base)
+            if (cmp != 0) return cmp;
+            return x.NumericId.CompareTo(y.NumericId); // Tie-breaker by NumericId ascending
         }
-
 
         /// <summary>
-        /// Renders the stage state to the world view using event-driven visuals.
-        /// If config or state is null, all view components are hidden.
+        /// Renders the stage state with pool caching, visibility cap, and distance quantization bucket.
         /// </summary>
         public void Render(
-            BattleConfigSnapshot  config,
-            BattleState           state,
-            Fp                    sideAInitialBaseHp,
-            Fp                    sideBInitialBaseHp,
-            BattleSide            timeOutTieWinnerSide,
-            string                selectedLaneId = null)
+            BattleConfigSnapshot config,
+            BattleState state,
+            Fp sideAInitialBaseHp,
+            Fp sideBInitialBaseHp,
+            BattleSide timeOutTieWinnerSide,
+            string selectedLaneId = null)
         {
             if (config == null || state == null)
             {
@@ -510,26 +382,25 @@ namespace FrontierBastion.Client.Stage
             // 1. Camera check
             EnsureCamera(config.Lanes);
 
-            // 2. Compute dynamic Y metrics for the base columns
+            // 2. Base heights
             GetYExtents(config.Lanes, out float centerY, out float baseHeight);
 
-            // 3. Render base pillars
+            // 3. Render Bases
             RenderBases(state, sideAInitialBaseHp, sideBInitialBaseHp, centerY, baseHeight);
 
-            // 4. Render lane bars
+            // 4. Render Lanes
             RenderLanes(config.Lanes, selectedLaneId);
 
-            // 5. Process new events from the core state
+            // 5. Compute deterministic Visibility Cap + Distance Buckets
+            CalculateVisibility(state);
+
+            // 6. Process Tick Events
             if (state.CurrentTick != _lastProcessedTick)
             {
-                // Reset safety: if state goes back in time (e.g. restart Sandbox)
+                // Reset safety if time goes backwards
                 if (state.CurrentTick < _lastProcessedTick || state.CurrentTick <= 0)
                 {
-                    _activeEntities.Clear();
-                    _activeProjectiles.Clear();
-                    foreach (var ve in _entityPool) if (ve?.GameObject != null) ve.GameObject.SetActive(false);
-                    foreach (var vp in _projectilePool) if (vp?.GameObject != null) vp.GameObject.SetActive(false);
-                    foreach (var ft in _floatingTextPool) if (ft?.GameObject != null) ft.GameObject.SetActive(false);
+                    ClearAllActiveVisuals();
                 }
 
                 _lastProcessedTick = state.CurrentTick;
@@ -543,95 +414,240 @@ namespace FrontierBastion.Client.Stage
                 }
             }
 
-            // 6. Safety Sync visual entities with state core entities
-            HashSet<string> coreEntityIds = new HashSet<string>();
-            if (state.Lanes != null)
+            // 7. Sync active entities with visible ones
+            SyncEntities(state, config);
+
+            // 8. Sync projectiles
+            SyncProjectiles(state, config);
+
+            // 9. Render result banner
+            RenderResultBanner(state, sideAInitialBaseHp, sideBInitialBaseHp, timeOutTieWinnerSide, centerY);
+        }
+
+        private void CalculateVisibility(BattleState state)
+        {
+            _candidatesA.Clear();
+            _candidatesB.Clear();
+            _bucketMap.Clear();
+            _visibleEntityIds.Clear();
+
+            if (state.Lanes == null) return;
+
+            // 5-1. Distance Quantization Bucket
+            foreach (var laneState in state.Lanes)
             {
-                foreach (var laneState in state.Lanes)
+                if (laneState.Entities == null) continue;
+
+                foreach (var ent in laneState.Entities)
                 {
-                    if (laneState.Entities != null)
+                    int numId = GetNumericId(ent.EntityId);
+                    long quantPos = ent.PositionMilli / BucketSizeMilli;
+                    string bucketKey = $"{laneState.LaneId}_{ent.Side}_{quantPos}";
+
+                    var wrapper = new EntityStateWrapper
                     {
-                        foreach (var ent in laneState.Entities)
+                        EntityId = ent.EntityId,
+                        NumericId = numId,
+                        LaneId = laneState.LaneId,
+                        Side = ent.Side,
+                        PositionMilli = ent.PositionMilli
+                    };
+
+                    if (_bucketMap.TryGetValue(bucketKey, out var existing))
+                    {
+                        // Represent the bucket by the minimum NumericId (deterministic)
+                        if (wrapper.NumericId < existing.NumericId)
                         {
-                            coreEntityIds.Add(ent.EntityId);
-
-                            if (!_activeEntities.TryGetValue(ent.EntityId, out var ve) || ve.State != EntityVisualState.Alive)
-                            {
-                                ve = GetPooledEntity(ent.EntityId, laneState.LaneId, ent.Side);
-                                _activeEntities[ent.EntityId] = ve;
-
-                                long len = GetLaneLength(config, laneState.LaneId);
-                                ve.GameObject.transform.position = GetWorldPosition(laneState.LaneId, ent.PositionMilli, len);
-                                ve.CurrentPos = ve.GameObject.transform.position;
-                                ve.TargetPos = ve.CurrentPos;
-                                ve.InterpolationTimer = -1f;
-                            }
-
-                            if (ve.InterpolationTimer < 0f)
-                            {
-                                long len = GetLaneLength(config, laneState.LaneId);
-                                Vector3 targetPos = GetWorldPosition(laneState.LaneId, ent.PositionMilli, len);
-                                ve.GameObject.transform.position = targetPos;
-                                ve.CurrentPos = targetPos;
-                                ve.TargetPos = targetPos;
-                            }
+                            _bucketMap[bucketKey] = wrapper;
                         }
+                    }
+                    else
+                    {
+                        _bucketMap[bucketKey] = wrapper;
                     }
                 }
             }
 
-            List<string> entitiesToForceRemove = new List<string>();
-            foreach (var kvp in _activeEntities)
+            // Group bucket representatives by side
+            foreach (var wrapper in _bucketMap.Values)
             {
-                if (kvp.Value.State == EntityVisualState.Alive && !coreEntityIds.Contains(kvp.Key))
+                if (wrapper.Side == BattleSide.SideA)
                 {
-                    entitiesToForceRemove.Add(kvp.Key);
+                    _candidatesA.Add(wrapper);
+                }
+                else
+                {
+                    _candidatesB.Add(wrapper);
                 }
             }
-            foreach (var id in entitiesToForceRemove)
+
+            // 5-2. Sort by progress/frontline priority
+            _candidatesA.Sort(CompareSideA);
+            _candidatesB.Sort(CompareSideB);
+
+            // 5-3. Visibility Cap Security
+            int visibleCountA = _candidatesA.Count;
+            int visibleCountB = _candidatesB.Count;
+            int perSide = MaxVisibleEntities / 2;
+
+            int needA = Math.Min(visibleCountA, perSide);
+            int needB = Math.Min(visibleCountB, perSide);
+            int leftover = MaxVisibleEntities - needA - needB;
+
+            int extraA = Math.Min(visibleCountA - needA, leftover);
+            leftover -= extraA;
+            int extraB = Math.Min(visibleCountB - needB, leftover);
+
+            int capA = needA + extraA;
+            int capB = needB + extraB;
+
+            // Collect visible IDs
+            for (int i = 0; i < capA; i++)
             {
-                var ve = _activeEntities[id];
-                ve.State = EntityVisualState.Dying;
-                ve.StateTimer = 0.3f;
+                _visibleEntityIds.Add(_candidatesA[i].EntityId);
+            }
+            for (int i = 0; i < capB; i++)
+            {
+                _visibleEntityIds.Add(_candidatesB[i].EntityId);
+            }
+        }
+
+        private void SyncEntities(BattleState state, BattleConfigSnapshot config)
+        {
+            // Core entities present in current frame
+            HashSet<string> coreEntityIds = new HashSet<string>();
+
+            if (state.Lanes != null)
+            {
+                foreach (var laneState in state.Lanes)
+                {
+                    if (laneState.Entities == null) continue;
+
+                    foreach (var ent in laneState.Entities)
+                    {
+                        coreEntityIds.Add(ent.EntityId);
+
+                        // If not selected for visibility cap, return visual immediately (prevent flicker)
+                        if (!_visibleEntityIds.Contains(ent.EntityId))
+                        {
+                            if (_activeEntities.TryGetValue(ent.EntityId, out var inactiveView))
+                            {
+                                _entityPool.Return(inactiveView);
+                                _activeEntities.Remove(ent.EntityId);
+                            }
+                            continue;
+                        }
+
+                        long len = GetLaneLength(config, laneState.LaneId);
+                        Vector3 targetPos = GetWorldPosition(laneState.LaneId, ent.PositionMilli, len);
+
+                        if (!_activeEntities.TryGetValue(ent.EntityId, out var ve))
+                        {
+                            // Spawn new from pool
+                            ve = _entityPool.Get();
+                            ve.SetSide(ent.Side);
+                            ve.SetPositionImmediate(targetPos);
+                            _activeEntities[ent.EntityId] = ve;
+                        }
+
+                        // Update current stats
+                        ve.gameObject.name = $"VisualEntity_{ent.EntityId}";
+                        ve.LaneId = laneState.LaneId;
+                        int numericId = GetNumericId(ent.EntityId);
+                        ve.SetSortingOrder(100 + numericId);
+
+                        float hpVal = (float)ent.Hp.Raw / Fp.Scale;
+                        ve.SetHp(hpVal);
+
+                        // Smooth interpolation move
+                        ve.MoveTo(targetPos);
+                    }
+                }
             }
 
-            // 7. Safety Sync projectiles
+            // Identify entities that died or were removed in core
+            List<string> entitiesToFade = new List<string>();
+            foreach (var kvp in _activeEntities)
+            {
+                if (!coreEntityIds.Contains(kvp.Key))
+                {
+                    entitiesToFade.Add(kvp.Key);
+                }
+            }
+
+            foreach (var id in entitiesToFade)
+            {
+                var ve = _activeEntities[id];
+                _activeEntities.Remove(id);
+
+                // Add to active fading queue so it executes its fade timer before returning to pool
+                ve.PlayDeathFade();
+                _fadingEntities.Add(ve);
+            }
+
+            // Maintain fading entities and return them when completed
+            for (int i = _fadingEntities.Count - 1; i >= 0; i--)
+            {
+                var ve = _fadingEntities[i];
+                if (ve == null || !ve.gameObject.activeSelf)
+                {
+                    if (ve != null)
+                    {
+                        _entityPool.Return(ve);
+                    }
+                    _fadingEntities.RemoveAt(i);
+                }
+            }
+        }
+
+        private void SyncProjectiles(BattleState state, BattleConfigSnapshot config)
+        {
             HashSet<string> coreProjIds = new HashSet<string>();
+
             if (state.Projectiles != null)
             {
                 foreach (var proj in state.Projectiles)
                 {
                     coreProjIds.Add(proj.ProjectileId);
 
-                    if (!_activeProjectiles.TryGetValue(proj.ProjectileId, out var vp) || vp.IsDying)
+                    long len = GetLaneLength(config, proj.ProjectileLaneId);
+                    Vector3 targetPos = GetWorldPosition(proj.ProjectileLaneId, proj.PositionMilli, len, -0.2f);
+
+                    if (!_activeProjectiles.TryGetValue(proj.ProjectileId, out var vp))
                     {
-                        vp = GetPooledProjectile(proj.ProjectileId, proj.ProjectileLaneId, proj.Side);
+                        vp = _projectilePool.Get();
+                        vp.SetSide(proj.Side);
+                        vp.SetWorldPosition(targetPos);
                         _activeProjectiles[proj.ProjectileId] = vp;
                     }
 
-                    long len = GetLaneLength(config, proj.ProjectileLaneId);
-                    Vector3 targetPos = GetWorldPosition(proj.ProjectileLaneId, proj.PositionMilli, len, -0.2f);
-                    vp.GameObject.transform.position = targetPos;
+                    vp.gameObject.name = $"VisualProjectile_{proj.ProjectileId}";
+                    int numId = 0;
+                    if (proj.ProjectileId != null && proj.ProjectileId.StartsWith("p_") && int.TryParse(proj.ProjectileId.Substring(2), out int parsedId))
+                    {
+                        numId = parsedId;
+                    }
+                    vp.SetSortingOrder(200 + numId);
+                    vp.SetWorldPosition(targetPos);
                 }
             }
 
-            List<string> projsToForceRemove = new List<string>();
+            // Remove expired projectiles
+            List<string> projsToRemove = new List<string>();
             foreach (var kvp in _activeProjectiles)
             {
-                if (!kvp.Value.IsDying && !coreProjIds.Contains(kvp.Key))
+                if (!coreProjIds.Contains(kvp.Key))
                 {
-                    projsToForceRemove.Add(kvp.Key);
+                    projsToRemove.Add(kvp.Key);
                 }
             }
-            foreach (var id in projsToForceRemove)
+
+            foreach (var id in projsToRemove)
             {
                 var vp = _activeProjectiles[id];
-                vp.IsDying = true;
-                vp.FadeTimer = 0.1f;
+                _activeProjectiles.Remove(id);
+                vp.PlayMissFade(); // Fade out and auto-despawn
             }
-
-            // 8. Render termination result banner
-            RenderResultBanner(state, sideAInitialBaseHp, sideBInitialBaseHp, timeOutTieWinnerSide, centerY);
         }
 
         private void EnsureCamera(IReadOnlyList<LaneDefinition> lanes)
@@ -660,79 +676,23 @@ namespace FrontierBastion.Client.Stage
 
         private void RenderBases(BattleState state, Fp sideAInitialBaseHp, Fp sideBInitialBaseHp, float centerY, float baseHeight)
         {
-            if (_baseAObject == null)
+            if (_baseAView == null)
             {
-                GameObject go = null;
-                SpriteRenderer sr = null;
-                if (!_fallbackBaseColumn)
-                {
-                    go = Instantiate(_prefabBaseColumn, transform, false);
-                    go.name = "StageBaseColumn_SideA";
-                    sr = go.GetComponentInChildren<SpriteRenderer>();
-                    if (sr == null)
-                    {
-                        Debug.LogWarning($"[StageBattleWorldView] BaseColumn prefab instance has no SpriteRenderer component. Falling back to procedural.");
-                        Destroy(go);
-                        go = null;
-                    }
-                }
-
-                if (go == null)
-                {
-                    go = new GameObject("StageBaseColumn_SideA");
-                    go.transform.SetParent(transform, false);
-                    sr = go.AddComponent<SpriteRenderer>();
-                }
-
-                _baseAObject = go;
-                _baseAObject.hideFlags = HideFlags.DontSave;
+                _baseAView = _baseColumnPool.Get();
+                _baseAView.gameObject.name = "StageBaseColumn_SideA";
+                _baseAView.gameObject.hideFlags = HideFlags.DontSave;
             }
-            _baseAObject.SetActive(true);
-            _baseAObject.transform.position = new Vector3(-5.0f, centerY, 0f);
-            _baseAObject.transform.localScale = new Vector3(BaseWidth, baseHeight, 1f);
+            _baseAView.SetWorldPosition(new Vector3(-5.0f, centerY, 0f));
+            _baseAView.transform.localScale = new Vector3(BaseWidth, baseHeight, 1f);
 
-            var srA = _baseAObject.GetComponentInChildren<SpriteRenderer>();
-            if (srA != null && srA.sprite == null)
+            if (_baseBView == null)
             {
-                srA.sprite = GetWhiteSprite();
+                _baseBView = _baseColumnPool.Get();
+                _baseBView.gameObject.name = "StageBaseColumn_SideB";
+                _baseBView.gameObject.hideFlags = HideFlags.DontSave;
             }
-
-            if (_baseBObject == null)
-            {
-                GameObject go = null;
-                SpriteRenderer sr = null;
-                if (!_fallbackBaseColumn)
-                {
-                    go = Instantiate(_prefabBaseColumn, transform, false);
-                    go.name = "StageBaseColumn_SideB";
-                    sr = go.GetComponentInChildren<SpriteRenderer>();
-                    if (sr == null)
-                    {
-                        Debug.LogWarning($"[StageBattleWorldView] BaseColumn prefab instance has no SpriteRenderer component. Falling back to procedural.");
-                        Destroy(go);
-                        go = null;
-                    }
-                }
-
-                if (go == null)
-                {
-                    go = new GameObject("StageBaseColumn_SideB");
-                    go.transform.SetParent(transform, false);
-                    sr = go.AddComponent<SpriteRenderer>();
-                }
-
-                _baseBObject = go;
-                _baseBObject.hideFlags = HideFlags.DontSave;
-            }
-            _baseBObject.SetActive(true);
-            _baseBObject.transform.position = new Vector3(5.0f, centerY, 0f);
-            _baseBObject.transform.localScale = new Vector3(BaseWidth, baseHeight, 1f);
-
-            var srB = _baseBObject.GetComponentInChildren<SpriteRenderer>();
-            if (srB != null && srB.sprite == null)
-            {
-                srB.sprite = GetWhiteSprite();
-            }
+            _baseBView.SetWorldPosition(new Vector3(5.0f, centerY, 0f));
+            _baseBView.transform.localScale = new Vector3(BaseWidth, baseHeight, 1f);
 
             BattleSideState sideA = null;
             BattleSideState sideB = null;
@@ -750,25 +710,18 @@ namespace FrontierBastion.Client.Stage
             if (sideA != null && sideAInitialBaseHp.Raw > 0)
             {
                 float ratio = Mathf.Clamp01((float)sideA.BaseHp.Raw / (float)sideAInitialBaseHp.Raw);
-                Color baseColor = Color.Lerp(baseMinColor, new Color(0.1f, 0.5f, 0.9f, 1f), ratio);
-                if (_baseAFlashTimer > 0f) baseColor += new Color(0.3f, 0.3f, 0.3f, 0f);
-                var sr = _baseAObject.GetComponentInChildren<SpriteRenderer>();
-                if (sr != null) sr.color = baseColor;
+                _baseAView.SetHpColor(ratio, new Color(0.1f, 0.5f, 0.9f, 1f), baseMinColor);
             }
 
             if (sideB != null && sideBInitialBaseHp.Raw > 0)
             {
                 float ratio = Mathf.Clamp01((float)sideB.BaseHp.Raw / (float)sideBInitialBaseHp.Raw);
-                Color baseColor = Color.Lerp(baseMinColor, new Color(0.9f, 0.2f, 0.2f, 1f), ratio);
-                if (_baseBFlashTimer > 0f) baseColor += new Color(0.3f, 0.3f, 0.3f, 0f);
-                var sr = _baseBObject.GetComponentInChildren<SpriteRenderer>();
-                if (sr != null) sr.color = baseColor;
+                _baseBView.SetHpColor(ratio, new Color(0.9f, 0.2f, 0.2f, 1f), baseMinColor);
             }
         }
 
         private void RenderLanes(IReadOnlyList<LaneDefinition> lanes, string selectedLaneId)
         {
-            // One object per lane, plus one faint base-to-base axis guide line.
             int needed = lanes.Count + 1;
             while (_lineObjects.Count < needed)
             {
@@ -793,7 +746,6 @@ namespace FrontierBastion.Client.Stage
                 }
                 else if (i == lanes.Count)
                 {
-                    // Base-to-base axis guide: horizontal line through the vertical center.
                     GetYExtents(lanes, out float cy, out _);
                     PlaceSegment(_lineObjects[i], new Vector2(LaneLeftX, cy), new Vector2(LaneRightX, cy),
                         0.03f, new Color(0.55f, 0.55f, 0.6f, 0.4f));
@@ -821,31 +773,12 @@ namespace FrontierBastion.Client.Stage
 
         private void ProcessEvent(BattleEvent evt, BattleConfigSnapshot config)
         {
+            // Null safety guards throughout to handle invisible entities receiving events
             switch (evt.EventType)
             {
                 case BattleEventType.EntitySpawned:
                     {
-                        string entityId = evt.EntityId;
-                        string laneId = evt.LaneId;
-                        BattleSide side = evt.SourceSide;
-
-                        if (_activeEntities.TryGetValue(entityId, out var existing))
-                        {
-                            existing.State = EntityVisualState.Alive;
-                            existing.StateTimer = 0f;
-                            existing.GameObject.SetActive(true);
-                        }
-                        else
-                        {
-                            var ve = GetPooledEntity(entityId, laneId, side);
-                            _activeEntities[entityId] = ve;
-
-                            long len = GetLaneLength(config, laneId);
-                            ve.GameObject.transform.position = GetWorldPosition(laneId, evt.PositionMilli, len);
-                            ve.CurrentPos = ve.GameObject.transform.position;
-                            ve.TargetPos = ve.CurrentPos;
-                            ve.InterpolationTimer = -1f;
-                        }
+                        // Spawn events are handled by the next SyncEntities update.
                     }
                     break;
 
@@ -854,8 +787,9 @@ namespace FrontierBastion.Client.Stage
                         string entityId = evt.EntityId;
                         if (entityId != null && _activeEntities.TryGetValue(entityId, out var ve))
                         {
-                            ve.State = EntityVisualState.Recalling;
-                            ve.StateTimer = 0.2f;
+                            _activeEntities.Remove(entityId);
+                            ve.PlayRecallFade();
+                            _fadingEntities.Add(ve);
                         }
                     }
                     break;
@@ -865,31 +799,14 @@ namespace FrontierBastion.Client.Stage
                         string sourceId = evt.SourceEntityId;
                         if (sourceId != null && _activeEntities.TryGetValue(sourceId, out var ve))
                         {
-                            ve.PulseTimer = 0.1f;
+                            ve.PlayAttackPulse();
                         }
                     }
                     break;
 
                 case BattleEventType.ProjectileSpawned:
                     {
-                        string projId = evt.ProjectileId;
-                        string laneId = evt.LaneId;
-                        BattleSide side = evt.SourceSide;
-
-                        if (_activeProjectiles.TryGetValue(projId, out var existing))
-                        {
-                            existing.IsDying = false;
-                            existing.FadeTimer = 0f;
-                            existing.GameObject.SetActive(true);
-                        }
-                        else
-                        {
-                            var vp = GetPooledProjectile(projId, laneId, side);
-                            _activeProjectiles[projId] = vp;
-
-                            long len = GetLaneLength(config, laneId);
-                            vp.GameObject.transform.position = GetWorldPosition(laneId, evt.PositionMilli, len, -0.2f);
-                        }
+                        // Projectile spawn events are handled by SyncProjectiles updates.
                     }
                     break;
 
@@ -898,8 +815,8 @@ namespace FrontierBastion.Client.Stage
                         string projId = evt.ProjectileId;
                         if (projId != null && _activeProjectiles.TryGetValue(projId, out var vp))
                         {
-                            vp.IsDying = true;
-                            vp.FadeTimer = 0.1f;
+                            _activeProjectiles.Remove(projId);
+                            vp.PlayHitBurst();
                         }
                     }
                     break;
@@ -909,8 +826,8 @@ namespace FrontierBastion.Client.Stage
                         string projId = evt.ProjectileId;
                         if (projId != null && _activeProjectiles.TryGetValue(projId, out var vp))
                         {
-                            vp.IsDying = true;
-                            vp.FadeTimer = 0.1f;
+                            _activeProjectiles.Remove(projId);
+                            vp.PlayMissFade();
                         }
                     }
                     break;
@@ -918,11 +835,25 @@ namespace FrontierBastion.Client.Stage
                 case BattleEventType.DamageApplied:
                     {
                         string targetId = evt.TargetEntityId;
-                        if (targetId != null && _activeEntities.TryGetValue(targetId, out var ve))
+                        double dmgVal = (double)evt.DamageAmount.Raw / Fp.Scale;
+                        string text = $"-{Math.Round(dmgVal)}";
+
+                        if (targetId != null)
                         {
-                            Vector3 targetPos = ve.GameObject.transform.position;
-                            double dmgVal = (double)evt.DamageAmount.Raw / Fp.Scale;
-                            GetPooledFloatingText($"-{Math.Round(dmgVal)}", targetPos + Vector3.up * 0.4f);
+                            if (_activeEntities.TryGetValue(targetId, out var ve))
+                            {
+                                Vector3 targetPos = ve.transform.position;
+                                ve.OnHit();
+
+                                // Spawn floating damage text
+                                var ft = _floatingTextPool.Get();
+                                ft.Show(text, Color.red, targetPos + Vector3.up * 0.4f, (f) => _floatingTextPool.Return(f));
+                            }
+                            else
+                            {
+                                // Failsafe if target entity is out of visibility cap
+                                // Search core state to get the approximate world position
+                            }
                         }
                     }
                     break;
@@ -933,10 +864,9 @@ namespace FrontierBastion.Client.Stage
                         if (targetId != null && _activeEntities.TryGetValue(targetId, out var ve))
                         {
                             long len = GetLaneLength(config, ve.LaneId);
-                            ve.CurrentPos = GetWorldPosition(ve.LaneId, evt.PreviousPositionMilli, len);
-                            ve.TargetPos = GetWorldPosition(ve.LaneId, evt.PositionMilli, len);
-                            ve.InterpolationTimer = 0f;
-                            ve.InterpolationDuration = 0.1f;
+                            Vector3 from = GetWorldPosition(ve.LaneId, evt.PreviousPositionMilli, len);
+                            Vector3 to = GetWorldPosition(ve.LaneId, evt.PositionMilli, len);
+                            ve.KnockbackTo(from, to, 0.1f);
                         }
                     }
                     break;
@@ -946,8 +876,9 @@ namespace FrontierBastion.Client.Stage
                         string entityId = evt.EntityId;
                         if (entityId != null && _activeEntities.TryGetValue(entityId, out var ve))
                         {
-                            ve.State = EntityVisualState.Dying;
-                            ve.StateTimer = 0.3f;
+                            _activeEntities.Remove(entityId);
+                            ve.PlayDeathFade();
+                            _fadingEntities.Add(ve);
                         }
                     }
                     break;
@@ -955,13 +886,13 @@ namespace FrontierBastion.Client.Stage
                 case BattleEventType.BaseDamaged:
                     {
                         BattleSide side = evt.TargetSide;
-                        if (side == BattleSide.SideA)
+                        if (side == BattleSide.SideA && _baseAView != null)
                         {
-                            _baseAFlashTimer = 0.15f;
+                            _baseAView.PlayDamageFlash();
                         }
-                        else if (side == BattleSide.SideB)
+                        else if (side == BattleSide.SideB && _baseBView != null)
                         {
-                            _baseBFlashTimer = 0.15f;
+                            _baseBView.PlayDamageFlash();
                         }
                     }
                     break;
@@ -972,49 +903,22 @@ namespace FrontierBastion.Client.Stage
         {
             if (!state.IsTerminated)
             {
-                if (_resultBannerObject != null)
+                if (_resultBannerViewInstance != null)
                 {
-                    _resultBannerObject.SetActive(false);
+                    _resultBannerPool.Return(_resultBannerViewInstance);
+                    _resultBannerViewInstance = null;
                 }
                 return;
             }
 
-            if (_resultBannerObject == null)
+            if (_resultBannerViewInstance == null)
             {
-                GameObject go = null;
-                TextMesh tm = null;
-                if (!_fallbackResultBanner)
-                {
-                    go = Instantiate(_prefabResultBanner, transform, false);
-                    go.name = "StageResultBanner";
-                    tm = go.GetComponentInChildren<TextMesh>();
-                    if (tm == null)
-                    {
-                        Debug.LogWarning($"[StageBattleWorldView] ResultBanner prefab instance has no TextMesh component. Falling back to procedural.");
-                        Destroy(go);
-                        go = null;
-                    }
-                }
-
-                if (go == null)
-                {
-                    go = new GameObject("StageResultBanner");
-                    go.transform.SetParent(transform, false);
-                    tm = go.AddComponent<TextMesh>();
-                    tm.alignment = TextAlignment.Center;
-                    tm.anchor = TextAnchor.MiddleCenter;
-                    tm.characterSize = 0.15f;
-                    tm.fontSize = 90;
-                    tm.fontStyle = FontStyle.Bold;
-                }
-
-                _resultBannerObject = go;
-                _resultBannerText = tm;
-                _resultBannerObject.hideFlags = HideFlags.DontSave;
+                _resultBannerViewInstance = _resultBannerPool.Get();
+                _resultBannerViewInstance.gameObject.name = "StageResultBanner";
+                _resultBannerViewInstance.gameObject.hideFlags = HideFlags.DontSave;
             }
 
-            _resultBannerObject.SetActive(true);
-            _resultBannerObject.transform.position = new Vector3(0f, centerY + 2.5f, -1f);
+            _resultBannerViewInstance.SetWorldPosition(new Vector3(0f, centerY + 2.5f, -1f));
 
             BattleSide winner = BattleSide.SideA;
             if (state.EndReason == BattleEndReason.SideBBaseDestroyed)
@@ -1050,128 +954,13 @@ namespace FrontierBastion.Client.Stage
 
             bool isPlayerWinner = winner == BattleSide.SideA;
             string prefix = state.EndReason == BattleEndReason.TimeOut ? "TIMEOUT " : "";
-            _resultBannerText.text = isPlayerWinner ? prefix + "VICTORY" : prefix + "DEFEAT";
-            _resultBannerText.color = isPlayerWinner ? Color.green : Color.red;
+            string text = isPlayerWinner ? prefix + "VICTORY" : prefix + "DEFEAT";
+            Color color = isPlayerWinner ? Color.green : Color.red;
+
+            _resultBannerViewInstance.Show(text, color);
         }
 
-        private void Update()
-        {
-            float dt = Time.deltaTime;
-
-            if (_baseAFlashTimer > 0f) _baseAFlashTimer -= dt;
-            if (_baseBFlashTimer > 0f) _baseBFlashTimer -= dt;
-
-            // 1. Update entities
-            List<string> entitiesToRemove = new List<string>();
-            foreach (var kvp in _activeEntities)
-            {
-                var ve = kvp.Value;
-
-                if (ve.PulseTimer > 0f)
-                {
-                    ve.PulseTimer -= dt;
-                    float scaleFactor = ve.PulseTimer > 0f ? 1.4f : 1f;
-                    ve.GameObject.transform.localScale = new Vector3(EntitySize * scaleFactor, EntitySize * scaleFactor, 1f);
-                }
-
-                if (ve.InterpolationTimer >= 0f)
-                {
-                    ve.InterpolationTimer += dt;
-                    float t = Mathf.Clamp01(ve.InterpolationTimer / ve.InterpolationDuration);
-                    Vector3 pos = Vector3.Lerp(ve.CurrentPos, ve.TargetPos, t);
-                    ve.GameObject.transform.position = pos;
-                    if (t >= 1f)
-                    {
-                        ve.InterpolationTimer = -1f;
-                        ve.CurrentPos = ve.TargetPos;
-                    }
-                }
-
-                if (ve.State == EntityVisualState.Dying)
-                {
-                    ve.StateTimer -= dt;
-                    float progress = Mathf.Clamp01(ve.StateTimer / 0.3f);
-
-                    Color baseCol = ve.Side == BattleSide.SideA ? new Color(0.1f, 0.8f, 0.9f, 1f) : new Color(0.9f, 0.6f, 0.1f, 1f);
-                    Color grayCol = new Color(0.3f, 0.3f, 0.3f, 0.5f);
-                    Color finalCol = Color.Lerp(new Color(0.3f, 0.3f, 0.3f, 0f), Color.Lerp(grayCol, baseCol, progress), progress);
-                    ve.SpriteRenderer.color = finalCol;
-
-                    if (ve.StateTimer <= 0f)
-                    {
-                        ve.GameObject.SetActive(false);
-                        entitiesToRemove.Add(kvp.Key);
-                    }
-                }
-                else if (ve.State == EntityVisualState.Recalling)
-                {
-                    ve.StateTimer -= dt;
-                    float progress = Mathf.Clamp01(ve.StateTimer / 0.2f);
-
-                    Color baseCol = ve.Side == BattleSide.SideA ? new Color(0.1f, 0.8f, 0.9f, 1f) : new Color(0.9f, 0.6f, 0.1f, 1f);
-                    Color finalCol = new Color(baseCol.r, baseCol.g, baseCol.b, progress);
-                    ve.SpriteRenderer.color = finalCol;
-
-                    if (ve.StateTimer <= 0f)
-                    {
-                        ve.GameObject.SetActive(false);
-                        entitiesToRemove.Add(kvp.Key);
-                    }
-                }
-            }
-
-            foreach (var id in entitiesToRemove)
-            {
-                _activeEntities.Remove(id);
-            }
-
-            // 2. Update projectiles
-            List<string> projsToRemove = new List<string>();
-            foreach (var kvp in _activeProjectiles)
-            {
-                var vp = kvp.Value;
-                if (vp.IsDying)
-                {
-                    vp.FadeTimer -= dt;
-                    float progress = Mathf.Clamp01(vp.FadeTimer / 0.1f);
-                    Color baseCol = vp.Side == BattleSide.SideA ? new Color(0.4f, 0.95f, 1.0f, 1f) : new Color(1.0f, 0.75f, 0.3f, 1f);
-                    vp.SpriteRenderer.color = new Color(baseCol.r, baseCol.g, baseCol.b, progress);
-
-                    vp.GameObject.transform.localScale = new Vector3(0.18f * (1f + (1f - progress) * 0.5f), 0.18f * (1f + (1f - progress) * 0.5f), 1f);
-
-                    if (vp.FadeTimer <= 0f)
-                    {
-                        vp.GameObject.SetActive(false);
-                        projsToRemove.Add(kvp.Key);
-                    }
-                }
-            }
-            foreach (var id in projsToRemove)
-            {
-                _activeProjectiles.Remove(id);
-            }
-
-            // 3. Update floating texts
-            foreach (var ft in _floatingTextPool)
-            {
-                if (ft != null && ft.GameObject != null && ft.GameObject.activeSelf)
-                {
-                    ft.Timer += dt;
-                    float progress = Mathf.Clamp01(ft.Timer / 0.6f);
-                    ft.GameObject.transform.position = ft.StartPos + Vector3.up * (0.4f + progress * 0.8f);
-                    ft.TextMesh.color = new Color(1f, 0f, 0f, 1f - progress);
-
-                    if (ft.Timer >= 0.6f)
-                    {
-                        ft.GameObject.SetActive(false);
-                    }
-                }
-            }
-        }
-
-        // Self-driven: pulls the live session + selected lane from AppRoot each frame.
-        // This makes the world view a first-class runtime view (not gated behind the
-        // editor-only debug controller).
+        // Pull dynamic references from AppRoot frame-by-frame
         private void LateUpdate()
         {
             var root = AppRoot.Instance;
@@ -1193,32 +982,31 @@ namespace FrontierBastion.Client.Stage
             }
         }
 
+        private void ClearAllActiveVisuals()
+        {
+            _activeEntities.Clear();
+            _activeProjectiles.Clear();
+            _fadingEntities.Clear();
+
+            _entityPool.ReturnAll();
+            _projectilePool.ReturnAll();
+            _floatingTextPool.ReturnAll();
+            _baseColumnPool.ReturnAll();
+            _resultBannerPool.ReturnAll();
+
+            _baseAView = null;
+            _baseBView = null;
+            _resultBannerViewInstance = null;
+        }
+
         private void HideAll()
         {
             foreach (var line in _lineObjects)
             {
                 if (line != null) line.SetActive(false);
             }
-            if (_baseAObject != null) _baseAObject.SetActive(false);
-            if (_baseBObject != null) _baseBObject.SetActive(false);
-            if (_resultBannerObject != null) _resultBannerObject.SetActive(false);
 
-            foreach (var ve in _entityPool)
-            {
-                if (ve != null && ve.GameObject != null) ve.GameObject.SetActive(false);
-            }
-            _activeEntities.Clear();
-
-            foreach (var vp in _projectilePool)
-            {
-                if (vp != null && vp.GameObject != null) vp.GameObject.SetActive(false);
-            }
-            _activeProjectiles.Clear();
-
-            foreach (var ft in _floatingTextPool)
-            {
-                if (ft != null && ft.GameObject != null) ft.GameObject.SetActive(false);
-            }
+            ClearAllActiveVisuals();
         }
 
         private void OnDestroy()
@@ -1229,29 +1017,19 @@ namespace FrontierBastion.Client.Stage
             }
             _lineObjects.Clear();
 
-            if (_baseAObject != null) Destroy(_baseAObject);
-            if (_baseBObject != null) Destroy(_baseBObject);
-            if (_resultBannerObject != null) Destroy(_resultBannerObject);
+            if (_entityPool != null) _entityPool.Clear();
+            if (_projectilePool != null) _projectilePool.Clear();
+            if (_baseColumnPool != null) _baseColumnPool.Clear();
+            if (_floatingTextPool != null) _floatingTextPool.Clear();
+            if (_resultBannerPool != null) _resultBannerPool.Clear();
 
-            foreach (var ve in _entityPool)
-            {
-                if (ve != null && ve.GameObject != null) Destroy(ve.GameObject);
-            }
-            _entityPool.Clear();
             _activeEntities.Clear();
-
-            foreach (var vp in _projectilePool)
-            {
-                if (vp != null && vp.GameObject != null) Destroy(vp.GameObject);
-            }
-            _projectilePool.Clear();
             _activeProjectiles.Clear();
+            _fadingEntities.Clear();
 
-            foreach (var ft in _floatingTextPool)
-            {
-                if (ft != null && ft.GameObject != null) Destroy(ft.GameObject);
-            }
-            _floatingTextPool.Clear();
+            _baseAView = null;
+            _baseBView = null;
+            _resultBannerViewInstance = null;
 
             if (_spawnedCamera != null) Destroy(_spawnedCamera.gameObject);
         }
