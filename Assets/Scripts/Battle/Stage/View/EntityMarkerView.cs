@@ -28,6 +28,11 @@ namespace FrontierBastion.Client.Stage.View
         private bool _isSelected = false;
         private float _maxHp = -1f;
 
+        // HP bar fill base transform (captured once) for left-anchored scaling.
+        private float _hpFillBaseScaleX = 1f;
+        private float _hpFillBaseLocalX = 0f;
+        private bool _hpFillCaptured = false;
+
         // Visual states
         private enum VisualState { Normal, Dying, Recalling }
         private VisualState _state = VisualState.Normal;
@@ -126,8 +131,26 @@ namespace FrontierBastion.Client.Stage.View
             }
             if (hpBarFill != null)
             {
+                if (!_hpFillCaptured)
+                {
+                    _hpFillBaseScaleX = hpBarFill.transform.localScale.x;
+                    if (_hpFillBaseScaleX <= 0f) _hpFillBaseScaleX = 1f;
+                    _hpFillBaseLocalX = hpBarFill.transform.localPosition.x;
+                    _hpFillCaptured = true;
+                }
+
                 float ratio = _maxHp > 0f ? Mathf.Clamp01(currentHp / _maxHp) : 0f;
-                hpBarFill.transform.localScale = new Vector3(ratio, 1f, 1f);
+
+                // Left-anchored shrink: scale down width and shift center left so the
+                // left edge stays fixed (sprite uses a centered pivot).
+                var ls = hpBarFill.transform.localScale;
+                ls.x = _hpFillBaseScaleX * ratio;
+                hpBarFill.transform.localScale = ls;
+
+                float halfBase = _hpFillBaseScaleX * 0.5f;
+                var lp = hpBarFill.transform.localPosition;
+                lp.x = _hpFillBaseLocalX - halfBase * (1f - ratio);
+                hpBarFill.transform.localPosition = lp;
             }
         }
 
