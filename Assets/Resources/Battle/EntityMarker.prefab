@@ -289,7 +289,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FrontierBastion.Client.Stage.View.EntityMarkerView
   spriteRenderer: {fileID: 1625879049252904221}
   sideASprite: {fileID: 10907, guid: 0000000000000000f000000000000000, type: 0}
-  sideBSprite: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
+  sideBSprite: {fileID: 10907, guid: 0000000000000000f000000000000000, type: 0}
   body: {fileID: 1625879049252904221}
   hpBarRoot: {fileID: 7877420499337345601}
   hpBarFill: {fileID: 531436779525507357}
