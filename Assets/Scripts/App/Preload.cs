@@ -36,8 +36,8 @@ namespace FrontierBastion.Client.App
             EnsureFolder(dir);
 
             BuildEntityMarkerPrefab(dir + "/EntityMarker.prefab");
-            BuildSpriteViewPrefab<FrontierBastion.Client.Stage.View.ProjectileView>(dir + "/Projectile.prefab", "Projectile");
-            BuildSpriteViewPrefab<FrontierBastion.Client.Stage.View.BaseColumnView>(dir + "/BaseColumn.prefab", "BaseColumn");
+            BuildSpriteViewPrefab<FrontierBastion.Client.Stage.View.ProjectileView>(dir + "/Projectile.prefab", "Projectile", 0.18f);
+            BuildSpriteViewPrefab<FrontierBastion.Client.Stage.View.BaseColumnView>(dir + "/BaseColumn.prefab", "BaseColumn", 1f);
             BuildTextViewPrefab<FrontierBastion.Client.Stage.View.FloatingTextView>(dir + "/FloatingDamageText.prefab", "FloatingDamageText", 40);
             BuildTextViewPrefab<FrontierBastion.Client.Stage.View.ResultBannerView>(dir + "/ResultBanner.prefab", "ResultBanner", 90);
 
@@ -114,9 +114,10 @@ namespace FrontierBastion.Client.App
         }
 
         // Generic sprite-based view (Projectile, BaseColumn): SpriteRenderer on root, wired.
-        private static void BuildSpriteViewPrefab<T>(string path, string name) where T : Component
+        private static void BuildSpriteViewPrefab<T>(string path, string name, float scale) where T : Component
         {
             var root = new GameObject(name);
+            root.transform.localScale = new Vector3(scale, scale, 1f);
             var sr = root.AddComponent<SpriteRenderer>();
             sr.sprite = MakeWhiteSprite();
             var view = root.AddComponent<T>();
