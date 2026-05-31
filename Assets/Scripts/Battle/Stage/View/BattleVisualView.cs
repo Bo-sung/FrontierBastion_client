@@ -16,6 +16,33 @@ namespace FrontierBastion.Client.Stage.View
             {
                 spriteRenderer = GetComponentInChildren<SpriteRenderer>();
             }
+            EnsureSprite(spriteRenderer);
+        }
+
+        // Shared white placeholder so views stay visible when a prefab's
+        // SpriteRenderer has no sprite assigned yet (artists fill these in later).
+        private static Sprite _placeholder;
+        protected static Sprite PlaceholderSprite
+        {
+            get
+            {
+                if (_placeholder == null)
+                {
+                    var tex = new Texture2D(4, 4);
+                    var cols = new Color[16];
+                    for (int i = 0; i < 16; i++) cols[i] = Color.white;
+                    tex.SetPixels(cols);
+                    tex.Apply();
+                    _placeholder = Sprite.Create(tex, new Rect(0, 0, 4, 4), new Vector2(0.5f, 0.5f), 4f);
+                }
+                return _placeholder;
+            }
+        }
+
+        /// <summary>Assigns the white placeholder if the renderer has no sprite.</summary>
+        protected static void EnsureSprite(SpriteRenderer sr)
+        {
+            if (sr != null && sr.sprite == null) sr.sprite = PlaceholderSprite;
         }
 
         public virtual void OnSpawn()

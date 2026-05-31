@@ -55,6 +55,8 @@ namespace FrontierBastion.Client.Stage.View
             {
                 body = GetComponentInChildren<SpriteRenderer>();
             }
+            EnsureSprite(body);
+            EnsureSprite(hpBarFill);
 
             // Auto-discover components if references are empty
             if (hpBarRoot == null)
