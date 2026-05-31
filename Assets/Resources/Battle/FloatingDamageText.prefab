@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 7405304208576494778}
   - component: {fileID: 6858531758811455944}
   - component: {fileID: 3266231007179312951}
+  - component: {fileID: 5011174802397134290}
   m_Layer: 0
   m_Name: FloatingDamageText
   m_TagString: Untagged
@@ -104,3 +105,17 @@ TextMesh:
   m_Color:
     serializedVersion: 2
     rgba: 4294967295
+--- !u!114 &5011174802397134290
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9128405364044742806}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ae8c1061cb6589942b7ed9b08440e32b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FrontierBastion.Client.Stage.View.FloatingTextView
+  spriteRenderer: {fileID: 0}
+  textMesh: {fileID: 3266231007179312951}
