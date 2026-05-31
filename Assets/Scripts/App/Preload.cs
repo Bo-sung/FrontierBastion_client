@@ -70,6 +70,7 @@ namespace FrontierBastion.Client.App
         private static void BuildEntityMarkerPrefab(string path)
         {
             var root = new GameObject("EntityMarker");
+            root.transform.localScale = new Vector3(0.28f, 0.28f, 1f); // match StageBattleWorldView.EntitySize
             var body = root.AddComponent<SpriteRenderer>();
             body.sprite = MakeWhiteSprite();
 
