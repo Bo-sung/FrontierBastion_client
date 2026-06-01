@@ -45,6 +45,11 @@ namespace FrontierBastion.Client.UI
         [SerializeField] private Button deployButton;
         [SerializeField] private Button recallButton;
 
+        [Header("Support Upgrade")]
+        [SerializeField] private Button resourceUpgradeButton;
+        [SerializeField] private Button pilotUpgradeButton;
+        [SerializeField] private TMP_Text supportStatusText;
+
         [Header("Navigation Buttons")]
         [SerializeField] private Button lanePrevButton;
         [SerializeField] private Button laneNextButton;
@@ -93,6 +98,8 @@ namespace FrontierBastion.Client.UI
             if (spawnButton != null) spawnButton.onClick.AddListener(presenter.CommandSpawnDrone);
             if (deployButton != null) deployButton.onClick.AddListener(presenter.CommandDeployPilot);
             if (recallButton != null) recallButton.onClick.AddListener(presenter.CommandRecallPilot);
+            if (resourceUpgradeButton != null) resourceUpgradeButton.onClick.AddListener(presenter.CommandStartResourceUpgrade);
+            if (pilotUpgradeButton != null) pilotUpgradeButton.onClick.AddListener(presenter.CommandStartPilotUpgrade);
             
             if (lanePrevButton != null) lanePrevButton.onClick.AddListener(() => presenter.CycleLane(-1));
             if (laneNextButton != null) laneNextButton.onClick.AddListener(() => presenter.CycleLane(1));
@@ -207,6 +214,32 @@ namespace FrontierBastion.Client.UI
             {
                 selectedInfoText.text = vm.HasSession 
                     ? $"Slot {vm.SelectedSlot + 1} / {vm.SelectedLaneId}" : "No selection";
+            }
+
+            // Support Status Text
+            if (supportStatusText != null)
+            {
+                if (!vm.HasSession)
+                {
+                    supportStatusText.text = string.Empty;
+                }
+                else
+                {
+                    string info = $"RES Lv{vm.ResourceLevel}  PILOT Lv{vm.PilotLevel}";
+                    if (vm.SupportActive)
+                    {
+                        info += $"  ▶ {vm.ActiveTrack}→Lv{vm.ActiveTargetLevel} {vm.SupportRemainingSeconds:F1}s";
+                    }
+                    if (vm.EnergyRegenPaused)
+                    {
+                        info += "  [REGEN PAUSED]";
+                    }
+                    if (vm.PilotDeployBlocked)
+                    {
+                        info += "  [PILOT LOCKED]";
+                    }
+                    supportStatusText.text = info;
+                }
             }
 
             // Slot select button highlights and cooldown labels
@@ -324,6 +357,9 @@ namespace FrontierBastion.Client.UI
             spawnButton  = MakeButton("SpawnButton",  root, new Vector2(1, 0), new Vector2(-20, 200), new Vector2(180, 40), "SPAWN DRONE");
             deployButton = MakeButton("DeployButton", root, new Vector2(1, 0), new Vector2(-20, 155), new Vector2(180, 40), "DEPLOY PILOT");
             recallButton = MakeButton("RecallButton", root, new Vector2(1, 0), new Vector2(-20, 110), new Vector2(180, 40), "RECALL PILOT");
+            resourceUpgradeButton = MakeButton("ResourceUpgradeButton", root, new Vector2(1, 0), new Vector2(-20, 245), new Vector2(180, 40), "RES UP");
+            pilotUpgradeButton    = MakeButton("PilotUpgradeButton",    root, new Vector2(1, 0), new Vector2(-20, 290), new Vector2(180, 40), "PILOT UP");
+            supportStatusText     = MakeText("SupportStatusText",       root, new Vector2(0, 1), new Vector2(20, -250), new Vector2(500, 28), "RES Lv1  PILOT Lv1", TextAlignmentOptions.TopLeft);
 
             // System buttons (top-right)
             startButton = MakeButton("StartButton", root, new Vector2(1, 1), new Vector2(-20, -20),  new Vector2(160, 36), "START BATTLE");
