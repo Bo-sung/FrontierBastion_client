@@ -8,6 +8,7 @@ using BattleSim.Core.Config;
 using BattleSim.Core.Results;
 using BattleSim.Core.State;
 using BattleSim.Core.FixedPoint;
+using BattleSim.Core.Commands;
 
 namespace FrontierBastion.Client.UI
 {
@@ -53,6 +54,16 @@ namespace FrontierBastion.Client.UI
         public string StatusText;
         public StatusKind StatusKind;
         public string ResultText;
+
+        // Support Upgrade Fields (SideA)
+        public int ResourceLevel;
+        public int PilotLevel;
+        public BattleSupportTrack ActiveTrack;
+        public int ActiveTargetLevel;
+        public float SupportRemainingSeconds;
+        public bool SupportActive;
+        public bool EnergyRegenPaused;
+        public bool PilotDeployBlocked;
     }
 
     /// <summary>
@@ -114,6 +125,9 @@ namespace FrontierBastion.Client.UI
             if (KeyPressed(Key.Space)) TogglePause();
             if (KeyPressed(Key.F8)) ManualStep();
             if (KeyPressed(Key.A)) ToggleOpponentAuto();
+
+            if (KeyPressed(Key.F1)) CommandStartResourceUpgrade();
+            if (KeyPressed(Key.F2)) CommandStartPilotUpgrade();
 
             if (KeyPressed(Key.Digit1)) SelectSlot(0);
             if (KeyPressed(Key.Digit2)) SelectSlot(1);
@@ -183,6 +197,18 @@ namespace FrontierBastion.Client.UI
         public void CommandRecallPilot()
         {
             string err = _battleManager.SubmitRecallPilot(_selectedSlot);
+            SetStatus(err);
+        }
+
+        public void CommandStartResourceUpgrade()
+        {
+            string err = _battleManager.SubmitStartSupportUpgrade(BattleSupportTrack.Resource);
+            SetStatus(err);
+        }
+
+        public void CommandStartPilotUpgrade()
+        {
+            string err = _battleManager.SubmitStartSupportUpgrade(BattleSupportTrack.Pilot);
             SetStatus(err);
         }
 
@@ -298,6 +324,18 @@ namespace FrontierBastion.Client.UI
                 {
                     vm.SideAEnergy = (float)sideA.Energy.Raw / 10000f;
                     vm.SideABaseHp = (float)sideA.BaseHp.Raw / 10000f;
+
+                    if (sideA.SupportState != null)
+                    {
+                        vm.ResourceLevel = sideA.SupportState.ResourceLevel;
+                        vm.PilotLevel = sideA.SupportState.PilotLevel;
+                        vm.ActiveTrack = sideA.SupportState.ActiveTrack;
+                        vm.ActiveTargetLevel = sideA.SupportState.ActiveTargetLevel;
+                        vm.SupportRemainingSeconds = (float)sideA.SupportState.RemainingTick / 20f;
+                        vm.SupportActive = sideA.SupportState.IsActive;
+                        vm.EnergyRegenPaused = sideA.SupportState.IsEnergyRegenPaused;
+                        vm.PilotDeployBlocked = sideA.SupportState.IsPilotDeployBlocked;
+                    }
 
                     var sideASlotsDef = session.SideASlots;
                     for (int i = 0; i < 4; i++)
