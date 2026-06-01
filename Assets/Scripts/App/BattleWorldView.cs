@@ -1015,11 +1015,14 @@ namespace FrontierBastion.Client.Stage
             _activeProjectiles.Clear();
             _fadingEntities.Clear();
 
-            _entityPool.ReturnAll();
-            _projectilePool.ReturnAll();
-            _floatingTextPool.ReturnAll();
-            _baseColumnPool.ReturnAll();
-            _resultBannerPool.ReturnAll();
+            // Pools may be null if a Render/HideAll runs before Awake's
+            // InitializePools (e.g. a LateUpdate on the same frame the component
+            // is added). Guard every pool.
+            _entityPool?.ReturnAll();
+            _projectilePool?.ReturnAll();
+            _floatingTextPool?.ReturnAll();
+            _baseColumnPool?.ReturnAll();
+            _resultBannerPool?.ReturnAll();
 
             _baseAView = null;
             _baseBView = null;

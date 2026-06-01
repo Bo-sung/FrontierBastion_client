@@ -69,10 +69,13 @@ namespace FrontierBastion.Client.EditorTools
         private static void BuildMainMenuPrefab()
         {
             var root = NewPanelRoot("UI_MainMenu");
+            AddBackground(root.transform, new Color(0.07f, 0.08f, 0.12f, 1f));
             var view = root.AddComponent<UI_MainMenu>();
 
-            var startBtn = MakeButton("StartButton", root.transform, new Vector2(0, 40), "START");
-            var quitBtn  = MakeButton("QuitButton",  root.transform, new Vector2(0, -40), "QUIT");
+            MakeTitle("Title", root.transform, new Vector2(0, 200), "FRONTIER BASTION", 64);
+
+            var startBtn = MakeButton("StartButton", root.transform, new Vector2(0, 0),   "START");
+            var quitBtn  = MakeButton("QuitButton",  root.transform, new Vector2(0, -70), "QUIT");
 
             var so = new SerializedObject(view);
             so.FindProperty("startButton").objectReferenceValue = startBtn;
@@ -85,10 +88,13 @@ namespace FrontierBastion.Client.EditorTools
         private static void BuildStageSelectPrefab()
         {
             var root = NewPanelRoot("UI_StageSelect");
+            AddBackground(root.transform, new Color(0.06f, 0.10f, 0.10f, 1f));
             var view = root.AddComponent<UI_StageSelect>();
 
-            var stageBtn = MakeButton("PrototypeStageButton", root.transform, new Vector2(0, 40), "PROTOTYPE STAGE");
-            var backBtn  = MakeButton("BackButton",           root.transform, new Vector2(0, -40), "BACK");
+            MakeTitle("Title", root.transform, new Vector2(0, 200), "SELECT STAGE", 52);
+
+            var stageBtn = MakeButton("PrototypeStageButton", root.transform, new Vector2(0, 0),   "PROTOTYPE STAGE");
+            var backBtn  = MakeButton("BackButton",           root.transform, new Vector2(0, -70), "BACK");
 
             var so = new SerializedObject(view);
             so.FindProperty("prototypeStageButton").objectReferenceValue = stageBtn;
@@ -96,6 +102,36 @@ namespace FrontierBastion.Client.EditorTools
             so.ApplyModifiedPropertiesWithoutUndo();
 
             SavePrefab(root, $"{UiResDir}/UI_StageSelect.prefab");
+        }
+
+        private static void AddBackground(Transform parent, Color color)
+        {
+            var go = new GameObject("Background", typeof(RectTransform));
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(parent, false);
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            var img = go.AddComponent<Image>();
+            img.color = color;
+        }
+
+        private static void MakeTitle(string name, Transform parent, Vector2 anchoredPos, string text, int fontSize)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(parent, false);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot     = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(800, 100);
+            rt.anchoredPosition = anchoredPos;
+            var tmp = go.AddComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.fontSize = fontSize;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = Color.white;
         }
 
         // ── Helpers ──────────────────────────────────────────────────────────────
