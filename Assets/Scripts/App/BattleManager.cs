@@ -48,6 +48,12 @@ namespace FrontierBastion.Client.App
             LastSession = new StageBattleSession(stage, sideADeck);
         }
 
+        /// <summary>Clears the active session (e.g. when leaving the Battle screen).</summary>
+        public void EndSession()
+        {
+            LastSession = null;
+        }
+
         // ── Tick driving ──────────────────────────────────────────────────────
 
         private void Update()

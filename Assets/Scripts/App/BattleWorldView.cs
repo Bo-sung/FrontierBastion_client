@@ -987,9 +987,30 @@ namespace FrontierBastion.Client.Stage
             _resultBannerViewInstance.Show(text, color);
         }
 
+        // When false, the view renders nothing and clears its visuals once.
+        private bool _visible = true;
+        private bool _clearedWhileHidden;
+
+        /// <summary>Enables/disables battlefield rendering (off outside the Battle screen).</summary>
+        public void SetVisible(bool visible)
+        {
+            _visible = visible;
+            if (!visible) _clearedWhileHidden = false; // allow one HideAll next LateUpdate
+        }
+
         // Pull dynamic references from GameFlowManager frame-by-frame
         private void LateUpdate()
         {
+            if (!_visible)
+            {
+                if (!_clearedWhileHidden)
+                {
+                    _clearedWhileHidden = true;
+                    HideAll();
+                }
+                return;
+            }
+
             var root = GameFlowManager.Instance;
             var mgr = root != null ? root.StageBattle : null;
             if (mgr != null && mgr.CurrentConfig != null && mgr.LastSession != null)

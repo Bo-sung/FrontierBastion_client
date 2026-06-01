@@ -167,6 +167,15 @@ namespace FrontierBastion.Client.App
 
         private void TransitionTo(GameScreen screen, string sceneName)
         {
+            // Leaving the Battle screen: end the session and hide the battlefield view
+            // so its visuals don't bleed into menu/select screens.
+            if (CurrentScreen == GameScreen.Battle && screen != GameScreen.Battle)
+            {
+                StageBattle.EndSession();
+                var wv = FrontierBastion.Client.Stage.BattleWorldView.GetOrCreate(gameObject);
+                wv.SetVisible(false);
+            }
+
             DespawnScreenUi();
             _pendingScreen = screen;
             SceneManager.LoadScene(sceneName);
@@ -203,6 +212,7 @@ namespace FrontierBastion.Client.App
         {
             // World-space battle view lives on this persistent object.
             var worldView = FrontierBastion.Client.Stage.BattleWorldView.GetOrCreate(gameObject);
+            worldView.SetVisible(true);
 
             SpawnScreenUi(UiBattleHudPath);
 
