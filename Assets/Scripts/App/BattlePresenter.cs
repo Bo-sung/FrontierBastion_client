@@ -57,12 +57,12 @@ namespace FrontierBastion.Client.UI
 
     /// <summary>
     /// Presenter in the MVP structure. Owns input state, keyboard shortcuts,
-    /// intent API routing to StageBattleManager, and binds the View to the Model.
+    /// intent API routing to BattleManager, and binds the View to the Model.
     /// </summary>
-    public sealed class StageBattlePresenter : MonoBehaviour
+    public sealed class BattlePresenter : MonoBehaviour
     {
-        [SerializeField] private StageBattleManager _battleManager;
-        [SerializeField] private StageBattleHudView _view;
+        [SerializeField] private BattleManager _battleManager;
+        [SerializeField] private UI_BattleHud _view;
 
         // Input States (single source of truth)
         private int _selectedSlot = 0;
@@ -80,11 +80,11 @@ namespace FrontierBastion.Client.UI
         {
             if (_battleManager == null)
             {
-                _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindAnyObjectByType<StageBattleManager>();
+                _battleManager = GameFlowManager.Instance != null ? GameFlowManager.Instance.StageBattle : FindAnyObjectByType<BattleManager>();
             }
             if (_view == null)
             {
-                _view = FindAnyObjectByType<StageBattleHudView>();
+                _view = FindAnyObjectByType<UI_BattleHud>();
             }
         }
 

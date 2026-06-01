@@ -6,7 +6,7 @@ namespace FrontierBastion.Client.Stage.View
     /// Base class for all runtime-spawned battle visual objects.
     /// Manages standard pool hooks, sprite renderer caching, sorting orders, and transforms.
     /// </summary>
-    public abstract class BattleVisualView : MonoBehaviour
+    public abstract class Entity_BaseView : MonoBehaviour
     {
         [SerializeField] protected SpriteRenderer spriteRenderer;
 

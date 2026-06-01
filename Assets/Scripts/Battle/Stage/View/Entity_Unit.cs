@@ -12,7 +12,7 @@ namespace FrontierBastion.Client.Stage.View
     /// Renders a Battle Entity (Hero or Minion) in world space.
     /// Manages Side sprites/colors, HP bars, knockback/movement interpolations, and attack/damage visuals.
     /// </summary>
-    public sealed class EntityMarkerView : BattleVisualView
+    public sealed class Entity_Unit : Entity_BaseView
     {
         [SerializeField] private Sprite sideASprite;
         [SerializeField] private Sprite sideBSprite;

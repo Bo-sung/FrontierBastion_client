@@ -16,7 +16,7 @@ namespace FrontierBastion.Client.Stage
     /// Pure runtime-generated world space view of a Stage battle session (v0.5+v0.7 event-driven).
     /// Redesigned to use generic pools, dedicated View MonoBehaviours, and deterministic visibility cap + distance bucket.
     /// </summary>
-    internal sealed class StageBattleWorldView : MonoBehaviour
+    internal sealed class BattleWorldView : MonoBehaviour
     {
         private struct EntityStateWrapper
         {
@@ -54,21 +54,21 @@ namespace FrontierBastion.Client.Stage
         private static Sprite _whiteSprite;
 
         private readonly List<GameObject> _lineObjects = new List<GameObject>();
-        private BaseColumnView _baseAView;
-        private BaseColumnView _baseBView;
-        private ResultBannerView _resultBannerViewInstance;
+        private Entity_Base _baseAView;
+        private Entity_Base _baseBView;
+        private UI_ResultBanner _resultBannerViewInstance;
         private Camera _spawnedCamera;
 
         // Pools (using generic GameObjectPool)
-        private GameObjectPool<EntityMarkerView> _entityPool;
-        private GameObjectPool<ProjectileView> _projectilePool;
-        private GameObjectPool<BaseColumnView> _baseColumnPool;
-        private GameObjectPool<FloatingTextView> _floatingTextPool;
-        private GameObjectPool<ResultBannerView> _resultBannerPool;
+        private GameObjectPool<Entity_Unit> _entityPool;
+        private GameObjectPool<Entity_Projectile> _projectilePool;
+        private GameObjectPool<Entity_Base> _baseColumnPool;
+        private GameObjectPool<UI_FloatingText> _floatingTextPool;
+        private GameObjectPool<UI_ResultBanner> _resultBannerPool;
 
         // Active Registries
-        private readonly Dictionary<string, EntityMarkerView> _activeEntities = new Dictionary<string, EntityMarkerView>();
-        private readonly Dictionary<string, ProjectileView> _activeProjectiles = new Dictionary<string, ProjectileView>();
+        private readonly Dictionary<string, Entity_Unit> _activeEntities = new Dictionary<string, Entity_Unit>();
+        private readonly Dictionary<string, Entity_Projectile> _activeProjectiles = new Dictionary<string, Entity_Projectile>();
 
         // Reusable lists to minimize garbage allocations
         private readonly List<EntityStateWrapper> _candidatesA = new List<EntityStateWrapper>();
@@ -77,7 +77,7 @@ namespace FrontierBastion.Client.Stage
         private readonly HashSet<string> _visibleEntityIds = new HashSet<string>();
 
         // Dying / Recalling visual storage for entities that were destroyed in core but performing fade outs
-        private readonly List<EntityMarkerView> _fadingEntities = new List<EntityMarkerView>();
+        private readonly List<Entity_Unit> _fadingEntities = new List<Entity_Unit>();
 
         // Event-driven state
         private int _lastProcessedTick = -1;
@@ -93,37 +93,37 @@ namespace FrontierBastion.Client.Stage
             _prefabEntityMarker = Resources.Load<GameObject>(PrefabPathEntityMarker);
             if (_prefabEntityMarker == null)
             {
-                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathEntityMarker}. Using procedural fallback.");
+                Debug.LogWarning($"[BattleWorldView] Prefab not found at Resources/{PrefabPathEntityMarker}. Using procedural fallback.");
             }
 
             _prefabProjectile = Resources.Load<GameObject>(PrefabPathProjectile);
             if (_prefabProjectile == null)
             {
-                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathProjectile}. Using procedural fallback.");
+                Debug.LogWarning($"[BattleWorldView] Prefab not found at Resources/{PrefabPathProjectile}. Using procedural fallback.");
             }
 
             _prefabBaseColumn = Resources.Load<GameObject>(PrefabPathBaseColumn);
             if (_prefabBaseColumn == null)
             {
-                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathBaseColumn}. Using procedural fallback.");
+                Debug.LogWarning($"[BattleWorldView] Prefab not found at Resources/{PrefabPathBaseColumn}. Using procedural fallback.");
             }
 
             _prefabFloatingDamageText = Resources.Load<GameObject>(PrefabPathFloatingDamageText);
             if (_prefabFloatingDamageText == null)
             {
-                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathFloatingDamageText}. Using procedural fallback.");
+                Debug.LogWarning($"[BattleWorldView] Prefab not found at Resources/{PrefabPathFloatingDamageText}. Using procedural fallback.");
             }
 
             _prefabResultBanner = Resources.Load<GameObject>(PrefabPathResultBanner);
             if (_prefabResultBanner == null)
             {
-                Debug.LogWarning($"[StageBattleWorldView] Prefab not found at Resources/{PrefabPathResultBanner}. Using procedural fallback.");
+                Debug.LogWarning($"[BattleWorldView] Prefab not found at Resources/{PrefabPathResultBanner}. Using procedural fallback.");
             }
         }
 
         private void InitializePools()
         {
-            _entityPool = new GameObjectPool<EntityMarkerView>(
+            _entityPool = new GameObjectPool<Entity_Unit>(
                 null,
                 transform,
                 30,
@@ -131,15 +131,15 @@ namespace FrontierBastion.Client.Stage
                     if (_prefabEntityMarker != null)
                     {
                         var go = Instantiate(_prefabEntityMarker, transform, false);
-                        var comp = go.GetComponent<EntityMarkerView>();
-                        if (comp == null) comp = go.AddComponent<EntityMarkerView>();
+                        var comp = go.GetComponent<Entity_Unit>();
+                        if (comp == null) comp = go.AddComponent<Entity_Unit>();
                         return comp;
                     }
                     return CreateProceduralEntityFallback();
                 }
             );
 
-            _projectilePool = new GameObjectPool<ProjectileView>(
+            _projectilePool = new GameObjectPool<Entity_Projectile>(
                 null,
                 transform,
                 20,
@@ -147,15 +147,15 @@ namespace FrontierBastion.Client.Stage
                     if (_prefabProjectile != null)
                     {
                         var go = Instantiate(_prefabProjectile, transform, false);
-                        var comp = go.GetComponent<ProjectileView>();
-                        if (comp == null) comp = go.AddComponent<ProjectileView>();
+                        var comp = go.GetComponent<Entity_Projectile>();
+                        if (comp == null) comp = go.AddComponent<Entity_Projectile>();
                         return comp;
                     }
                     return CreateProceduralProjectileFallback();
                 }
             );
 
-            _baseColumnPool = new GameObjectPool<BaseColumnView>(
+            _baseColumnPool = new GameObjectPool<Entity_Base>(
                 null,
                 transform,
                 2,
@@ -163,15 +163,15 @@ namespace FrontierBastion.Client.Stage
                     if (_prefabBaseColumn != null)
                     {
                         var go = Instantiate(_prefabBaseColumn, transform, false);
-                        var comp = go.GetComponent<BaseColumnView>();
-                        if (comp == null) comp = go.AddComponent<BaseColumnView>();
+                        var comp = go.GetComponent<Entity_Base>();
+                        if (comp == null) comp = go.AddComponent<Entity_Base>();
                         return comp;
                     }
                     return CreateProceduralBaseFallback();
                 }
             );
 
-            _floatingTextPool = new GameObjectPool<FloatingTextView>(
+            _floatingTextPool = new GameObjectPool<UI_FloatingText>(
                 null,
                 transform,
                 15,
@@ -179,15 +179,15 @@ namespace FrontierBastion.Client.Stage
                     if (_prefabFloatingDamageText != null)
                     {
                         var go = Instantiate(_prefabFloatingDamageText, transform, false);
-                        var comp = go.GetComponent<FloatingTextView>();
-                        if (comp == null) comp = go.AddComponent<FloatingTextView>();
+                        var comp = go.GetComponent<UI_FloatingText>();
+                        if (comp == null) comp = go.AddComponent<UI_FloatingText>();
                         return comp;
                     }
                     return CreateProceduralFloatingTextFallback();
                 }
             );
 
-            _resultBannerPool = new GameObjectPool<ResultBannerView>(
+            _resultBannerPool = new GameObjectPool<UI_ResultBanner>(
                 null,
                 transform,
                 1,
@@ -195,8 +195,8 @@ namespace FrontierBastion.Client.Stage
                     if (_prefabResultBanner != null)
                     {
                         var go = Instantiate(_prefabResultBanner, transform, false);
-                        var comp = go.GetComponent<ResultBannerView>();
-                        if (comp == null) comp = go.AddComponent<ResultBannerView>();
+                        var comp = go.GetComponent<UI_ResultBanner>();
+                        if (comp == null) comp = go.AddComponent<UI_ResultBanner>();
                         return comp;
                     }
                     return CreateProceduralResultBannerFallback();
@@ -204,37 +204,37 @@ namespace FrontierBastion.Client.Stage
             );
         }
 
-        private EntityMarkerView CreateProceduralEntityFallback()
+        private Entity_Unit CreateProceduralEntityFallback()
         {
             GameObject go = new GameObject("VisualEntity");
             go.transform.SetParent(transform, false);
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = GetWhiteSprite();
-            var marker = go.AddComponent<EntityMarkerView>();
+            var marker = go.AddComponent<Entity_Unit>();
             return marker;
         }
 
-        private ProjectileView CreateProceduralProjectileFallback()
+        private Entity_Projectile CreateProceduralProjectileFallback()
         {
             GameObject go = new GameObject("VisualProjectile");
             go.transform.SetParent(transform, false);
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = GetWhiteSprite();
-            var proj = go.AddComponent<ProjectileView>();
+            var proj = go.AddComponent<Entity_Projectile>();
             return proj;
         }
 
-        private BaseColumnView CreateProceduralBaseFallback()
+        private Entity_Base CreateProceduralBaseFallback()
         {
             GameObject go = new GameObject("BaseColumn");
             go.transform.SetParent(transform, false);
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = GetWhiteSprite();
-            var col = go.AddComponent<BaseColumnView>();
+            var col = go.AddComponent<Entity_Base>();
             return col;
         }
 
-        private FloatingTextView CreateProceduralFloatingTextFallback()
+        private UI_FloatingText CreateProceduralFloatingTextFallback()
         {
             GameObject go = new GameObject("FloatingText");
             go.transform.SetParent(transform, false);
@@ -244,11 +244,11 @@ namespace FrontierBastion.Client.Stage
             tm.characterSize = 0.08f;
             tm.fontSize = 40;
             tm.fontStyle = FontStyle.Bold;
-            var ft = go.AddComponent<FloatingTextView>();
+            var ft = go.AddComponent<UI_FloatingText>();
             return ft;
         }
 
-        private ResultBannerView CreateProceduralResultBannerFallback()
+        private UI_ResultBanner CreateProceduralResultBannerFallback()
         {
             GameObject go = new GameObject("ResultBanner");
             go.transform.SetParent(transform, false);
@@ -258,20 +258,20 @@ namespace FrontierBastion.Client.Stage
             tm.characterSize = 0.15f;
             tm.fontSize = 90;
             tm.fontStyle = FontStyle.Bold;
-            var rb = go.AddComponent<ResultBannerView>();
+            var rb = go.AddComponent<UI_ResultBanner>();
             return rb;
         }
 
         /// <summary>
-        /// Gets or attaches a <see cref="StageBattleWorldView"/> component to the host.
+        /// Gets or attaches a <see cref="BattleWorldView"/> component to the host.
         /// </summary>
-        public static StageBattleWorldView GetOrCreate(GameObject host)
+        public static BattleWorldView GetOrCreate(GameObject host)
         {
             if (host == null) throw new ArgumentNullException(nameof(host));
-            var view = host.GetComponent<StageBattleWorldView>();
+            var view = host.GetComponent<BattleWorldView>();
             if (view == null)
             {
-                view = host.AddComponent<StageBattleWorldView>();
+                view = host.AddComponent<BattleWorldView>();
             }
             return view;
         }
@@ -960,10 +960,10 @@ namespace FrontierBastion.Client.Stage
             _resultBannerViewInstance.Show(text, color);
         }
 
-        // Pull dynamic references from AppRoot frame-by-frame
+        // Pull dynamic references from GameFlowManager frame-by-frame
         private void LateUpdate()
         {
-            var root = AppRoot.Instance;
+            var root = GameFlowManager.Instance;
             var mgr = root != null ? root.StageBattle : null;
             if (mgr != null && mgr.CurrentConfig != null && mgr.LastSession != null)
             {

@@ -11,7 +11,7 @@ namespace FrontierBastion.Client.Stage.View
     /// Renders a combat projectile in world space.
     /// Supports side color assignment and hit burst / miss fade visual sequences.
     /// </summary>
-    public sealed class ProjectileView : BattleVisualView
+    public sealed class Entity_Projectile : Entity_BaseView
     {
         private Color _baseColor;
         private bool _isDying = false;

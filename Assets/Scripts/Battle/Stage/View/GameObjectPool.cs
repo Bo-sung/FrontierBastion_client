@@ -5,10 +5,10 @@ using UnityEngine;
 namespace FrontierBastion.Client.Stage.View
 {
     /// <summary>
-    /// Generic object pool for BattleVisualView components to recycle GameObjects and avoid GC allocations.
+    /// Generic object pool for Entity_BaseView components to recycle GameObjects and avoid GC allocations.
     /// Provides Instantiate, caching, active tracking, prewarming, and fallback support.
     /// </summary>
-    public sealed class GameObjectPool<T> where T : BattleVisualView
+    public sealed class GameObjectPool<T> where T : Entity_BaseView
     {
         private readonly T _prefab;
         private readonly Transform _parent;

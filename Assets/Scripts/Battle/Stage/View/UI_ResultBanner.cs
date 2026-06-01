@@ -5,7 +5,7 @@ namespace FrontierBastion.Client.Stage.View
     /// <summary>
     /// Renders the Victory or Defeat banner in the center of the world space.
     /// </summary>
-    public sealed class ResultBannerView : BattleVisualView
+    public sealed class UI_ResultBanner : Entity_BaseView
     {
         [SerializeField] private TextMesh textMesh;
 

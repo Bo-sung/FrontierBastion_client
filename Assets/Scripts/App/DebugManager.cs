@@ -16,9 +16,9 @@ namespace FrontierBastion.Client.App
     /// Bypasses primary player input logic (routed via Presenter) and only renders
     /// the status overlay and drives the world view rendering.
     /// </summary>
-    public sealed class StageAppDebugController : MonoBehaviour
+    public sealed class DebugManager : MonoBehaviour
     {
-        private StageBattleManager   _battleManager;
+        private BattleManager   _battleManager;
         private bool                 _lastFaultedReported;
         private bool                 _showDebugOverlay = false;
 
@@ -27,8 +27,8 @@ namespace FrontierBastion.Client.App
 
         private void Start()
         {
-            _battleManager = AppRoot.Instance != null ? AppRoot.Instance.StageBattle : FindAnyObjectByType<StageBattleManager>();
-            // World view is now self-driven and created by AppRoot.EnterStage(); not owned here.
+            _battleManager = GameFlowManager.Instance != null ? GameFlowManager.Instance.StageBattle : FindAnyObjectByType<BattleManager>();
+            // World view is now self-driven and created by GameFlowManager.EnterStage(); not owned here.
         }
 
         private static bool KeyPressed(Key key)
@@ -182,7 +182,7 @@ namespace FrontierBastion.Client.App
             }
             else
             {
-                var presenter = AppRoot.Instance != null ? AppRoot.Instance.Presenter : FindAnyObjectByType<StageBattlePresenter>();
+                var presenter = GameFlowManager.Instance != null ? GameFlowManager.Instance.Presenter : FindAnyObjectByType<BattlePresenter>();
                 int selSlot = presenter != null ? presenter.SelectedSlot : 0;
                 string selLane = presenter != null ? presenter.SelectedLaneId : "lane_ground_1";
 

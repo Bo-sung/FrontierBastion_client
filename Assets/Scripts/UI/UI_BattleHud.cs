@@ -12,10 +12,10 @@ namespace FrontierBastion.Client.UI
     /// Does not contain game logic, only formats ViewModel values into UI elements
     /// and dispatches user interactions to the Presenter.
     /// </summary>
-    public sealed class StageBattleHudView : MonoBehaviour
+    public sealed class UI_BattleHud : MonoBehaviour
     {
         [Header("Presenter Reference")]
-        [SerializeField] private StageBattlePresenter presenter;
+        [SerializeField] private BattlePresenter presenter;
 
         [Header("Simulation Status")]
         [SerializeField] private TMP_Text tickText;
@@ -62,7 +62,7 @@ namespace FrontierBastion.Client.UI
         {
             if (presenter == null)
             {
-                presenter = FindAnyObjectByType<StageBattlePresenter>();
+                presenter = FindAnyObjectByType<BattlePresenter>();
             }
 
             BindButtons();
@@ -297,9 +297,9 @@ namespace FrontierBastion.Client.UI
             resultText.fontSize = 48;
             resultPanel.SetActive(false);
 
-            if (presenter == null) presenter = FindAnyObjectByType<StageBattlePresenter>();
+            if (presenter == null) presenter = FindAnyObjectByType<BattlePresenter>();
 
-            Debug.Log("[StageBattleHudView] Debug HUD built and fields assigned. " +
+            Debug.Log("[UI_BattleHud] Debug HUD built and fields assigned. " +
                       "If 'Presenter' is still empty, assign it (or it auto-resolves at runtime). Enter Play and press START BATTLE.");
         }
 

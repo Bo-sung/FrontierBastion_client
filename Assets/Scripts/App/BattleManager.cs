@@ -11,7 +11,7 @@ namespace FrontierBastion.Client.App
     /// layer — <see cref="StageBattleSession"/> itself never calls <c>Time.deltaTime</c>.
     /// Exposes player command and flow APIs for UI or input layers above.
     /// </summary>
-    public sealed class StageBattleManager : MonoBehaviour
+    public sealed class BattleManager : MonoBehaviour
     {
         private StageDataManager _stageData;
 
@@ -27,7 +27,7 @@ namespace FrontierBastion.Client.App
         /// <summary>Set true to suspend automatic ticking without destroying the session.</summary>
         public bool IsPaused { get; set; }
 
-        // Called by AppRoot.CreateManagers() after AddComponent so Awake ordering
+        // Called by GameFlowManager.CreateManagers() after AddComponent so Awake ordering
         // does not matter.
         public void Bind(StageDataManager stageData)
         {

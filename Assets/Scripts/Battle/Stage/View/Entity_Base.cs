@@ -6,7 +6,7 @@ namespace FrontierBastion.Client.Stage.View
     /// Renders a Base pillar.
     /// Supports dynamic HP-based color transition and hit damage flash highlights.
     /// </summary>
-    public sealed class BaseColumnView : BattleVisualView
+    public sealed class Entity_Base : Entity_BaseView
     {
         private Color _currentColor;
         private float _flashTimer = 0f;

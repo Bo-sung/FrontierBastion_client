@@ -7,12 +7,12 @@ namespace FrontierBastion.Client.Stage.View
     /// Renders floating text indicators (e.g. damage values) in world space.
     /// Animates upward movement and alpha fade before returning itself to the pool.
     /// </summary>
-    public sealed class FloatingTextView : BattleVisualView
+    public sealed class UI_FloatingText : Entity_BaseView
     {
         [SerializeField] private TextMesh textMesh;
         private float _timer = 0f;
         private Vector3 _startPos;
-        private Action<FloatingTextView> _onCompleteCallback;
+        private Action<UI_FloatingText> _onCompleteCallback;
 
         protected override void Awake()
         {
@@ -29,7 +29,7 @@ namespace FrontierBastion.Client.Stage.View
             _timer = 0f;
         }
 
-        public void Show(string text, Color color, Vector3 startPos, Action<FloatingTextView> onComplete = null)
+        public void Show(string text, Color color, Vector3 startPos, Action<UI_FloatingText> onComplete = null)
         {
             if (textMesh != null)
             {
