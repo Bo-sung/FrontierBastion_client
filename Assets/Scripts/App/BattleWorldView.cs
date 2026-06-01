@@ -923,6 +923,36 @@ namespace FrontierBastion.Client.Stage
                         }
                     }
                     break;
+
+                case BattleEventType.SupportUpgradeStarted:
+                    {
+                        string sideName = evt.TargetSide == BattleSide.SideA ? "Player" : "Opponent";
+                        string trackName = evt.SupportTrack.ToString().ToUpperInvariant();
+                        Debug.Log($"[BattleWorldView] Support Upgrade Started: {sideName} {trackName} upgrade to Level {evt.SupportLevel}");
+
+                        Entity_Base targetBase = evt.TargetSide == BattleSide.SideA ? _baseAView : _baseBView;
+                        if (targetBase != null)
+                        {
+                            var ft = _floatingTextPool.Get();
+                            ft.Show($"{trackName} UP...", Color.cyan, targetBase.transform.position + Vector3.up * 2f, (f) => _floatingTextPool.Return(f));
+                        }
+                    }
+                    break;
+
+                case BattleEventType.SupportUpgradeCompleted:
+                    {
+                        string sideName = evt.TargetSide == BattleSide.SideA ? "Player" : "Opponent";
+                        string trackName = evt.SupportTrack.ToString().ToUpperInvariant();
+                        Debug.Log($"[BattleWorldView] Support Upgrade Completed: {sideName} {trackName} upgraded to Level {evt.SupportLevel}");
+
+                        Entity_Base targetBase = evt.TargetSide == BattleSide.SideA ? _baseAView : _baseBView;
+                        if (targetBase != null)
+                        {
+                            var ft = _floatingTextPool.Get();
+                            ft.Show($"{trackName} LV{evt.SupportLevel}!", Color.green, targetBase.transform.position + Vector3.up * 2.5f, (f) => _floatingTextPool.Return(f));
+                        }
+                    }
+                    break;
             }
         }
 
