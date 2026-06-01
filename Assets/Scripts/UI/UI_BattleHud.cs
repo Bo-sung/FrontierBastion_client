@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
+using FrontierBastion.Client.App;
 
 namespace FrontierBastion.Client.UI
 {
@@ -57,6 +58,11 @@ namespace FrontierBastion.Client.UI
         [Header("Termination Screen")]
         [SerializeField] private GameObject resultPanel;
         [SerializeField] private TMP_Text resultText;
+        [SerializeField] private Button resultRestartButton;
+        [SerializeField] private Button resultStageSelectButton;
+        [SerializeField] private Button resultMainMenuButton;
+
+        private bool _buttonsBound;
 
         private void Start()
         {
@@ -68,9 +74,20 @@ namespace FrontierBastion.Client.UI
             BindButtons();
         }
 
+        /// <summary>
+        /// Called by the presenter when it resolves this view after the HUD spawns.
+        /// Ensures button listeners are wired even if the presenter wasn't found in Start().
+        /// </summary>
+        public void BindPresenter(BattlePresenter p)
+        {
+            presenter = p;
+            BindButtons();
+        }
+
         private void BindButtons()
         {
-            if (presenter == null) return;
+            if (presenter == null || _buttonsBound) return;
+            _buttonsBound = true;
 
             if (startButton != null) startButton.onClick.AddListener(presenter.StartBattle);
             if (spawnButton != null) spawnButton.onClick.AddListener(presenter.CommandSpawnDrone);
@@ -93,6 +110,29 @@ namespace FrontierBastion.Client.UI
                     slotSelectButtons[i].onClick.AddListener(() => presenter.SelectSlot(index));
                 }
             }
+
+            // Result panel flow buttons → GameFlowManager (not the presenter).
+            if (resultRestartButton != null)
+                resultRestartButton.onClick.AddListener(OnResultRestart);
+            if (resultStageSelectButton != null)
+                resultStageSelectButton.onClick.AddListener(OnResultStageSelect);
+            if (resultMainMenuButton != null)
+                resultMainMenuButton.onClick.AddListener(OnResultMainMenu);
+        }
+
+        private static void OnResultRestart()
+        {
+            if (GameFlowManager.Instance != null) GameFlowManager.Instance.RestartBattle();
+        }
+
+        private static void OnResultStageSelect()
+        {
+            if (GameFlowManager.Instance != null) GameFlowManager.Instance.GoToStageSelect();
+        }
+
+        private static void OnResultMainMenu()
+        {
+            if (GameFlowManager.Instance != null) GameFlowManager.Instance.GoToMainMenu();
         }
 
         /// <summary>

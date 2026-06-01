@@ -1,16 +1,28 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
 using FrontierBastion.Client.UI;
 
 namespace FrontierBastion.Client.App
 {
+    /// <summary>Top-level game screens. Each maps to a scene + a UI prefab.</summary>
+    public enum GameScreen
+    {
+        None,
+        MainMenu,
+        StageSelect,
+        Battle,
+    }
+
     /// <summary>
-    /// Persistent application root.  Created by <see cref="Preload"/> and kept alive
-    /// for the full runtime via DontDestroyOnLoad.
+    /// Persistent application root and screen-flow coordinator.  Created by
+    /// <see cref="Preload"/> and kept alive for the full runtime via DontDestroyOnLoad.
     ///
-    /// Owns all manager component references.  Duplicate instances are immediately
-    /// destroyed so only one GameFlowManager ever exists.
+    /// Owns the always-on managers (data, battle, presenter), the persistent UIRoot
+    /// canvas + EventSystem, and drives screen transitions (MainMenu / StageSelect /
+    /// Battle) via <see cref="SceneManager"/>.  The matching UI prefab is spawned
+    /// under <see cref="UIRoot"/> after each scene load.
     /// </summary>
     public sealed class GameFlowManager : MonoBehaviour
     {
@@ -20,11 +32,29 @@ namespace FrontierBastion.Client.App
         public BattleManager    StageBattle { get; private set; }
         public BattlePresenter  Presenter   { get; private set; }
 
-        /// <summary>Persistent screen-space UI root that HUD prefabs are spawned under.</summary>
+        /// <summary>Persistent screen-space UI root that screen prefabs are spawned under.</summary>
         public Canvas UIRoot { get; private set; }
 
-        // Current stage HUD instance (spawned under UIRoot on EnterStage).
-        private GameObject _hudInstance;
+        /// <summary>Persistent main camera shared across all screens.</summary>
+        public Camera MainCamera { get; private set; }
+
+        public GameScreen CurrentScreen { get; private set; } = GameScreen.None;
+
+        /// <summary>Stage id chosen on the StageSelect screen, consumed on Battle entry.</summary>
+        public string SelectedStageId { get; private set; }
+
+        // ── Scene names (must match the generated .unity files + Build Settings) ──
+        public const string SceneMainMenu    = "MainMenu";
+        public const string SceneStageSelect = "StageSelect";
+        public const string SceneBattle      = "Battle";
+
+        // ── UI prefab Resources paths ──
+        private const string UiMainMenuPath    = "UI/UI_MainMenu";
+        private const string UiStageSelectPath = "UI/UI_StageSelect";
+        private const string UiBattleHudPath   = "UI/UIHUD";
+
+        private GameObject _screenUiInstance;       // current screen's UI prefab instance
+        private GameScreen _pendingScreen = GameScreen.None;
 
         private void Awake()
         {
@@ -36,27 +66,36 @@ namespace FrontierBastion.Client.App
             Instance = this;
             DontDestroyOnLoad(gameObject);
             CreateManagers();
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        private void Start()
+        {
+            // The Preload scene is already loaded when Awake runs, so sceneLoaded
+            // does not fire for it. Kick off the first real screen here.
+            GoToMainMenu();
         }
 
         private void OnDestroy()
         {
             if (Instance == this)
+            {
+                SceneManager.sceneLoaded -= OnSceneLoaded;
                 Instance = null;
+            }
         }
 
         // ── Manager bootstrap ─────────────────────────────────────────────────
 
         private void CreateManagers()
         {
-            // AddComponent triggers each manager's Awake immediately.
-            // Bind() runs after all Awakes to wire cross-references.
             StageData   = gameObject.AddComponent<StageDataManager>();
             StageBattle = gameObject.AddComponent<BattleManager>();
             Presenter   = gameObject.AddComponent<BattlePresenter>();
 
             StageBattle.Bind(StageData);
 
-            // Persistent UI root + event system for screen-space HUD prefabs.
+            MainCamera = CreateMainCamera();
             UIRoot = CreateUIRoot();
             EnsureEventSystem();
 
@@ -65,10 +104,27 @@ namespace FrontierBastion.Client.App
 #endif
         }
 
+        private Camera CreateMainCamera()
+        {
+            // Reuse an existing main camera if a scene already has one.
+            if (Camera.main != null) return Camera.main;
+
+            var camGO = new GameObject("MainCamera");
+            camGO.transform.SetParent(transform, false);
+            camGO.tag = "MainCamera";
+            var cam = camGO.AddComponent<Camera>();
+            cam.orthographic = true;
+            cam.orthographicSize = 5f;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.08f, 0.08f, 0.12f, 1f);
+            cam.transform.position = new Vector3(0f, 0f, -10f);
+            return cam;
+        }
+
         private Canvas CreateUIRoot()
         {
             var uiGO = new GameObject("UIRoot");
-            uiGO.transform.SetParent(transform, false); // child of GameFlowManager → persists via DontDestroyOnLoad
+            uiGO.transform.SetParent(transform, false);
             var canvas = uiGO.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             uiGO.AddComponent<CanvasScaler>();
@@ -84,40 +140,96 @@ namespace FrontierBastion.Client.App
             DontDestroyOnLoad(es);
         }
 
-        // ── Stage entry ───────────────────────────────────────────────────────
+        // ── Screen transitions ─────────────────────────────────────────────────
 
-        /// <summary>Resources path (no extension) of the HUD prefab.</summary>
-        private const string HudResourcePath = "UI/UIHUD";
-
-        /// <summary>
-        /// Enters a stage: ensures the world-space battle view exists and spawns the
-        /// HUD prefab under <see cref="UIRoot"/>.  Idempotent — the HUD is spawned only
-        /// once.  Called by <see cref="Preload"/> at boot; later this can be driven by a
-        /// stage-select flow.
-        /// </summary>
-        public void EnterStage()
+        public void GoToMainMenu()
         {
-            // First-class self-driven world-space battle view (reads state via GameFlowManager).
-            FrontierBastion.Client.Stage.BattleWorldView.GetOrCreate(gameObject);
-
-            if (_hudInstance != null) return;
-
-            GameObject hudPrefab = Resources.Load<GameObject>(HudResourcePath);
-            if (hudPrefab == null)
-            {
-                Debug.LogError($"[GameFlowManager] HUD prefab not found at Resources/{HudResourcePath}.prefab");
-                return;
-            }
-            _hudInstance = Instantiate(hudPrefab, UIRoot.transform, false);
+            TransitionTo(GameScreen.MainMenu, SceneMainMenu);
         }
 
-        /// <summary>Despawns the current stage HUD instance, if any.</summary>
-        public void ExitStage()
+        public void GoToStageSelect()
         {
-            if (_hudInstance != null)
+            TransitionTo(GameScreen.StageSelect, SceneStageSelect);
+        }
+
+        /// <summary>Selects a stage and enters the Battle scene.</summary>
+        public void GoToBattle(string stageId)
+        {
+            SelectedStageId = stageId;
+            TransitionTo(GameScreen.Battle, SceneBattle);
+        }
+
+        /// <summary>Re-enters the Battle scene with the currently selected stage.</summary>
+        public void RestartBattle()
+        {
+            TransitionTo(GameScreen.Battle, SceneBattle);
+        }
+
+        private void TransitionTo(GameScreen screen, string sceneName)
+        {
+            DespawnScreenUi();
+            _pendingScreen = screen;
+            SceneManager.LoadScene(sceneName);
+        }
+
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            if (_pendingScreen == GameScreen.None) return; // not a flow-driven load
+
+            CurrentScreen = _pendingScreen;
+            _pendingScreen = GameScreen.None;
+
+            switch (CurrentScreen)
             {
-                Destroy(_hudInstance);
-                _hudInstance = null;
+                case GameScreen.MainMenu:    EnterMainMenu();    break;
+                case GameScreen.StageSelect: EnterStageSelect(); break;
+                case GameScreen.Battle:      EnterBattle();      break;
+            }
+        }
+
+        // ── Per-screen entry ────────────────────────────────────────────────────
+
+        private void EnterMainMenu()
+        {
+            SpawnScreenUi(UiMainMenuPath);
+        }
+
+        private void EnterStageSelect()
+        {
+            SpawnScreenUi(UiStageSelectPath);
+        }
+
+        private void EnterBattle()
+        {
+            // World-space battle view lives on this persistent object.
+            var worldView = FrontierBastion.Client.Stage.BattleWorldView.GetOrCreate(gameObject);
+
+            SpawnScreenUi(UiBattleHudPath);
+
+            // Start the battle session for the selected stage (or prototype default).
+            StageBattle.StartPrototypeBattle();
+            StageBattle.IsPaused = false;
+        }
+
+        // ── Screen UI prefab spawn/despawn ───────────────────────────────────────
+
+        private void SpawnScreenUi(string resourcePath)
+        {
+            var prefab = Resources.Load<GameObject>(resourcePath);
+            if (prefab == null)
+            {
+                Debug.LogError($"[GameFlowManager] Screen UI prefab not found at Resources/{resourcePath}.prefab");
+                return;
+            }
+            _screenUiInstance = Instantiate(prefab, UIRoot.transform, false);
+        }
+
+        private void DespawnScreenUi()
+        {
+            if (_screenUiInstance != null)
+            {
+                Destroy(_screenUiInstance);
+                _screenUiInstance = null;
             }
         }
     }

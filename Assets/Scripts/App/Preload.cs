@@ -16,9 +16,11 @@ namespace FrontierBastion.Client.App
         {
             if (GameFlowManager.Instance != null) return;
 
+            // GameFlowManager.Awake creates managers + UIRoot and subscribes to
+            // sceneLoaded; once this Preload scene finishes loading it auto-advances
+            // to MainMenu. No further calls needed here.
             var rootGO = new GameObject("GameFlowManager");
-            var appRoot = rootGO.AddComponent<GameFlowManager>(); // GameFlowManager.Awake → CreateManagers (UIRoot, managers)
-            appRoot.EnterStage();                         // load HUD from Resources, spawn under UIRoot
+            rootGO.AddComponent<GameFlowManager>();
         }
     }
 }

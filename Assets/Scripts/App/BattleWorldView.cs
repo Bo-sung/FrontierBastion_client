@@ -82,10 +82,34 @@ namespace FrontierBastion.Client.Stage
         // Event-driven state
         private int _lastProcessedTick = -1;
 
+        // Hierarchy containers (keep GameFlowManager's children tidy).
+        private Transform _entitiesRoot;
+        private Transform _projectilesRoot;
+        private Transform _basesRoot;
+        private Transform _textRoot;
+        private Transform _lanesRoot;
+
         private void Awake()
         {
+            CreateContainers();
             LoadPrefabs();
             InitializePools();
+        }
+
+        private void CreateContainers()
+        {
+            _entitiesRoot    = NewContainer("Entities");
+            _projectilesRoot = NewContainer("Projectiles");
+            _basesRoot       = NewContainer("Bases");
+            _textRoot        = NewContainer("FloatingText");
+            _lanesRoot       = NewContainer("Lanes");
+        }
+
+        private Transform NewContainer(string name)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(transform, false);
+            return go.transform;
         }
 
         private void LoadPrefabs()
@@ -130,7 +154,7 @@ namespace FrontierBastion.Client.Stage
                 () => {
                     if (_prefabEntityMarker != null)
                     {
-                        var go = Instantiate(_prefabEntityMarker, transform, false);
+                        var go = Instantiate(_prefabEntityMarker, _entitiesRoot, false);
                         var comp = go.GetComponent<Entity_Unit>();
                         if (comp == null) comp = go.AddComponent<Entity_Unit>();
                         return comp;
@@ -146,7 +170,7 @@ namespace FrontierBastion.Client.Stage
                 () => {
                     if (_prefabProjectile != null)
                     {
-                        var go = Instantiate(_prefabProjectile, transform, false);
+                        var go = Instantiate(_prefabProjectile, _projectilesRoot, false);
                         var comp = go.GetComponent<Entity_Projectile>();
                         if (comp == null) comp = go.AddComponent<Entity_Projectile>();
                         return comp;
@@ -162,7 +186,7 @@ namespace FrontierBastion.Client.Stage
                 () => {
                     if (_prefabBaseColumn != null)
                     {
-                        var go = Instantiate(_prefabBaseColumn, transform, false);
+                        var go = Instantiate(_prefabBaseColumn, _basesRoot, false);
                         var comp = go.GetComponent<Entity_Base>();
                         if (comp == null) comp = go.AddComponent<Entity_Base>();
                         return comp;
@@ -178,7 +202,7 @@ namespace FrontierBastion.Client.Stage
                 () => {
                     if (_prefabFloatingDamageText != null)
                     {
-                        var go = Instantiate(_prefabFloatingDamageText, transform, false);
+                        var go = Instantiate(_prefabFloatingDamageText, _textRoot, false);
                         var comp = go.GetComponent<UI_FloatingText>();
                         if (comp == null) comp = go.AddComponent<UI_FloatingText>();
                         return comp;
@@ -194,7 +218,7 @@ namespace FrontierBastion.Client.Stage
                 () => {
                     if (_prefabResultBanner != null)
                     {
-                        var go = Instantiate(_prefabResultBanner, transform, false);
+                        var go = Instantiate(_prefabResultBanner, _textRoot, false);
                         var comp = go.GetComponent<UI_ResultBanner>();
                         if (comp == null) comp = go.AddComponent<UI_ResultBanner>();
                         return comp;
@@ -207,7 +231,7 @@ namespace FrontierBastion.Client.Stage
         private Entity_Unit CreateProceduralEntityFallback()
         {
             GameObject go = new GameObject("VisualEntity");
-            go.transform.SetParent(transform, false);
+            go.transform.SetParent(_entitiesRoot, false);
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = GetWhiteSprite();
             var marker = go.AddComponent<Entity_Unit>();
@@ -217,7 +241,7 @@ namespace FrontierBastion.Client.Stage
         private Entity_Projectile CreateProceduralProjectileFallback()
         {
             GameObject go = new GameObject("VisualProjectile");
-            go.transform.SetParent(transform, false);
+            go.transform.SetParent(_projectilesRoot, false);
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = GetWhiteSprite();
             var proj = go.AddComponent<Entity_Projectile>();
@@ -227,7 +251,7 @@ namespace FrontierBastion.Client.Stage
         private Entity_Base CreateProceduralBaseFallback()
         {
             GameObject go = new GameObject("BaseColumn");
-            go.transform.SetParent(transform, false);
+            go.transform.SetParent(_basesRoot, false);
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = GetWhiteSprite();
             var col = go.AddComponent<Entity_Base>();
@@ -237,7 +261,7 @@ namespace FrontierBastion.Client.Stage
         private UI_FloatingText CreateProceduralFloatingTextFallback()
         {
             GameObject go = new GameObject("FloatingText");
-            go.transform.SetParent(transform, false);
+            go.transform.SetParent(_textRoot, false);
             var tm = go.AddComponent<TextMesh>();
             tm.alignment = TextAlignment.Center;
             tm.anchor = TextAnchor.MiddleCenter;
@@ -251,7 +275,7 @@ namespace FrontierBastion.Client.Stage
         private UI_ResultBanner CreateProceduralResultBannerFallback()
         {
             GameObject go = new GameObject("ResultBanner");
-            go.transform.SetParent(transform, false);
+            go.transform.SetParent(_textRoot, false);
             var tm = go.AddComponent<TextMesh>();
             tm.alignment = TextAlignment.Center;
             tm.anchor = TextAnchor.MiddleCenter;
@@ -652,26 +676,29 @@ namespace FrontierBastion.Client.Stage
 
         private void EnsureCamera(IReadOnlyList<LaneDefinition> lanes)
         {
-            if (Camera.main == null && _spawnedCamera == null)
+            // Prefer the persistent shared camera (GameFlowManager.MainCamera, surfaced
+            // as Camera.main). Only spawn a private one if no main camera exists.
+            Camera cam = Camera.main;
+            if (cam == null && _spawnedCamera == null)
             {
                 GameObject camGO = new GameObject("StageWorldCamera");
                 camGO.transform.SetParent(transform, false);
-                camGO.transform.position = new Vector3(0f, -1.5f, -10f);
                 _spawnedCamera = camGO.AddComponent<Camera>();
                 _spawnedCamera.orthographic = true;
-                _spawnedCamera.orthographicSize = 4.5f;
                 _spawnedCamera.clearFlags = CameraClearFlags.SolidColor;
                 _spawnedCamera.backgroundColor = new Color(0.08f, 0.08f, 0.12f, 1f);
                 camGO.tag = "MainCamera";
                 camGO.hideFlags = HideFlags.DontSave;
+                cam = _spawnedCamera;
             }
+            if (cam == null) cam = _spawnedCamera;
+            if (cam == null) return;
 
-            if (_spawnedCamera != null)
-            {
-                GetYExtents(lanes, out float centerY, out float baseHeight);
-                _spawnedCamera.transform.position = new Vector3(0f, centerY, -10f);
-                _spawnedCamera.orthographicSize = Mathf.Max(4.5f, baseHeight * 1.5f);
-            }
+            // Frame the battlefield with whichever camera we're using.
+            GetYExtents(lanes, out float centerY, out float baseHeight);
+            cam.orthographic = true;
+            cam.transform.position = new Vector3(0f, centerY, -10f);
+            cam.orthographicSize = Mathf.Max(4.5f, baseHeight * 1.5f);
         }
 
         private void RenderBases(BattleState state, Fp sideAInitialBaseHp, Fp sideBInitialBaseHp, float centerY, float baseHeight)
@@ -726,7 +753,7 @@ namespace FrontierBastion.Client.Stage
             while (_lineObjects.Count < needed)
             {
                 GameObject lineGO = new GameObject($"StageLaneBar_{_lineObjects.Count}");
-                lineGO.transform.SetParent(transform, false);
+                lineGO.transform.SetParent(_lanesRoot, false);
                 var sr = lineGO.AddComponent<SpriteRenderer>();
                 sr.sprite = GetWhiteSprite();
                 sr.color = new Color(0.3f, 0.3f, 0.3f, 0.7f);

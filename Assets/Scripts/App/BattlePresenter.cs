@@ -130,6 +130,14 @@ namespace FrontierBastion.Client.UI
 
         private void LateUpdate()
         {
+            // The HUD is spawned only after entering the Battle scene, which can be
+            // long after this persistent presenter's Start(). Re-resolve until found.
+            if (_view == null)
+            {
+                _view = FindAnyObjectByType<UI_BattleHud>();
+                if (_view != null) _view.BindPresenter(this);
+            }
+
             if (_view != null)
             {
                 _view.Render(BuildViewModel());
