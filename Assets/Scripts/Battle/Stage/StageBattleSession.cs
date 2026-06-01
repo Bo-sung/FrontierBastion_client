@@ -171,6 +171,14 @@ namespace FrontierBastion.Client.Stage
                 _simulator.CurrentTick, slotIndex, null, LocalSide));
 
         /// <summary>
+        /// Submits a StartSupportUpgrade command for the local player (SideA).
+        /// Returns null on success, or a rejection reason string on failure.
+        /// </summary>
+        public string SubmitStartSupportUpgrade(BattleSupportTrack track) =>
+            TrySubmitCommand(BattleCommand.StartSupportUpgrade(
+                _simulator.CurrentTick, LocalSide, track));
+
+        /// <summary>
         /// Submits an arbitrary BattleCommand.
         /// The caller is responsible for the correct tick, side, and slot values.
         /// Returns null on success, or a rejection reason string on failure.
@@ -319,12 +327,44 @@ namespace FrontierBastion.Client.Stage
                         return "Slot " + command.SlotIndex + " pilot already deployed";
                     if (slot.IsPilotKnockedOut)
                         return "Slot " + command.SlotIndex + " pilot knocked out";
+                    if (sideState.SupportState != null && sideState.SupportState.IsPilotDeployBlocked)
+                        return "Pilot deployment is blocked by active support upgrade";
                     return null;
 
                 case BattleCommandType.RecallPilot:
                     if (slot == null) return "Slot " + command.SlotIndex + " not found";
                     if (!slot.IsPilotDeployed)
                         return "Slot " + command.SlotIndex + " pilot not deployed; cannot recall";
+                    return null;
+
+                case BattleCommandType.StartSupportUpgrade:
+                    if (command.SupportTrack == BattleSupportTrack.None)
+                        return "None track is not supported";
+                    if (sideState.SupportState != null && sideState.SupportState.ActiveTrack != BattleSupportTrack.None)
+                        return "Support upgrade already in progress";
+
+                    int currentLevel = 0;
+                    Fp cost = Fp.Zero;
+                    if (command.SupportTrack == BattleSupportTrack.Resource)
+                    {
+                        currentLevel = sideState.SupportState != null ? sideState.SupportState.ResourceLevel : 0;
+                        if (currentLevel >= 5)
+                            return "Support track already at max level";
+                        int targetLevel = currentLevel + 1;
+                        cost = Fp.FromInt(100 + 10 * (targetLevel - 1));
+                    }
+                    else if (command.SupportTrack == BattleSupportTrack.Pilot)
+                    {
+                        currentLevel = sideState.SupportState != null ? sideState.SupportState.PilotLevel : 0;
+                        if (currentLevel >= 5)
+                            return "Support track already at max level";
+                        int targetLevel = currentLevel + 1;
+                        cost = Fp.FromInt(50 + 10 * (targetLevel - 1));
+                    }
+
+                    Fp avail = sideState.Energy;
+                    if (avail < cost)
+                        return "Insufficient energy: need " + (cost.Raw / Fp.Scale) + ", have " + (avail.Raw / Fp.Scale);
                     return null;
 
                 default:

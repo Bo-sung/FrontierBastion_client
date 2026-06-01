@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using FrontierBastion.Client.Stage;
 using UnityEngine;
 using BattleSim.Core.Config;
+using BattleSim.Core.Commands;
 
 namespace FrontierBastion.Client.App
 {
@@ -83,6 +84,12 @@ namespace FrontierBastion.Client.App
         public string SubmitRecallPilot(int slotIndex) =>
             LastSession != null
                 ? LastSession.SubmitRecallPilot(slotIndex)
+                : "No active session";
+
+        /// <summary>Returns null on success, or a rejection reason string.</summary>
+        public string SubmitStartSupportUpgrade(BattleSupportTrack track) =>
+            LastSession != null
+                ? LastSession.SubmitStartSupportUpgrade(track)
                 : "No active session";
 
         public void ToggleOpponentAuto() => LastSession?.OpponentController.Toggle();
